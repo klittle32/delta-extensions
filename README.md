@@ -18,7 +18,14 @@ The project owner approved **host APIs first** on October 31, 2026: develop
 minimal generic public Letta APIs, then the mod. Host work is staged in the
 [personal Letta Code fork](https://github.com/klittle32/letta-code), separately
 from this monorepo. Upstream submission and deployment are not authorized by that
-approval. The fork's existence does not mean the changes are published or ready.
+approval.
+
+The first tested source checkpoint is now published on
+[`delta/mod-host-apis`](https://github.com/klittle32/letta-code/tree/delta/mod-host-apis)
+at [`3eacb8139`](https://github.com/klittle32/letta-code/commit/3eacb8139530907402382c69a2a252ac366f8d98).
+It includes native questions and initial turn-control/context primitives, not a
+complete host integration. See the [checkpoint](docs/host-implementation.md) for
+verification and remaining work.
 
 Reference baseline: upstream **0.1.32**, commit
 [`ac769c681ba7a95ec7347b591f0858857a1a9e80`](https://github.com/zed-industries/delta-claude/tree/ac769c681ba7a95ec7347b591f0858857a1a9e80),
