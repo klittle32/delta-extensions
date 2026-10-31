@@ -20,12 +20,13 @@ minimal generic public Letta APIs, then the mod. Host work is staged in the
 from this monorepo. Upstream submission and deployment are not authorized by that
 approval.
 
-The first tested source checkpoint is now published on
+The tested source checkpoint is published on
 [`delta/mod-host-apis`](https://github.com/klittle32/letta-code/tree/delta/mod-host-apis)
-at [`3eacb8139`](https://github.com/klittle32/letta-code/commit/3eacb8139530907402382c69a2a252ac366f8d98).
-It includes native questions and initial turn-control/context primitives, not a
-complete host integration. See the [checkpoint](docs/host-implementation.md) for
-verification and remaining work.
+at [`5b5350f1a`](https://github.com/klittle32/letta-code/commit/5b5350f1aad683438b9fc62fd1812a602a720ce1).
+It includes native questions, TUI interruption lifecycle, inactive conversation
+creation, and passive-context primitives. Trusted activation and passive-context
+delivery are not wired yet. See the [checkpoint](docs/host-implementation.md) for
+verification and remaining work; this is not a complete host integration.
 
 Reference baseline: upstream **0.1.32**, commit
 [`ac769c681ba7a95ec7347b591f0858857a1a9e80`](https://github.com/zed-industries/delta-claude/tree/ac769c681ba7a95ec7347b591f0858857a1a9e80),
