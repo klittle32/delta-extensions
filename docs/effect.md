@@ -46,7 +46,7 @@ and the installed 0.63.0 README/matrix. The resulting configuration uses:
 No Oxlint rule is suppressed. Real findings were corrected: typed decoders for
 known encoded values, selective `catchIf`, concrete test error channels, and
 Effect-valued `replay`/`snapshot` service members instead of lazy zero-argument
-functions. The remaining **122 warnings**, all `effecttsgo/unstable-api-usage`,
+functions. The remaining **141 warnings**, all `effecttsgo/unstable-api-usage`,
 are intentionally visible: the required exact-pinned Effect process, filesystem,
 path, digest and Node services, and @effect/vitest APIs carry upstream unstable
 annotations. These warnings are not zero diagnostics and do not certify API
@@ -99,8 +99,14 @@ process singleton; a future host adapter owns its runtime and abort bridge.
   generated Default layers. Effect 4 Schema uses `decodeUnknownEffect` at unknown
   boundaries and `decodeEffect` for known encoded strings.
 - Process imports are `effect/process`, not v3 Command or beta unstable paths.
-  Explicit argv/cwd, shell false, inherited env plus overrides, concurrent output
-  draining and actual exit checks are exercised. Scopes own termination.
+  Explicit argv/cwd, shell false, inherited env plus overrides, concurrent stdin
+  writing/output draining and actual exit checks are exercised. Scopes own
+  termination. Installed 4.1.1 `ChildProcess.StdinConfig` supports `stream: "pipe"`
+  and `endOnDone`; `ChildProcessHandle.stdin` is a public byte sink. The transport
+  uses `Stream.run` into that sink (lazy 64 KiB views), merged with output drains.
+  It deliberately does not pass an automatic input Stream to the spawner: the Node
+  backend races automatic input failures into exitCode, hiding structured CLI
+  errors. Explicit sink ownership lets output/error precedence stay truthful.
 - `FileSystem`, `Path`, `Semaphore` and `Digest` services own durable producer
   state. `File.sync`, directory sync, exclusive opens, atomic rename and scoped
   finalizers use public APIs; no raw Node persistence syscall was needed.
@@ -132,8 +138,10 @@ Outbox/tooling checkpoint CI: commit `c46899830de034aa0d16f7f1974eb1477cc4b516`,
 [run 41250090689](https://github.com/klittle32/delta-extensions/actions/runs/41250090689).
 All three runs were confirmed by the parent watcher. Parent outbox verification
 also covered 121 local tests/build/frozen install and independent blocker recheck.
-This subsequent content leaf adds seven tests (128 total); current local results
-are reported with delivery. No remote CI for this leaf is claimed.
+Content checkpoint `7078fa2435bba08822feae76353fa5d3e872652f` passed
+[CI 41250546873](https://github.com/klittle32/delta-extensions/actions/runs/41250546873)
+with 128 tests/nine suites, independently rechecked by the parent. The subsequent
+stdin leaf adds 14 tests (142 total). No remote CI for the stdin leaf is claimed.
 
 The process and outbox tests use real local files/processes and injected services
 for failure/deadline boundaries. They are not live Delta or Letta acceptance.

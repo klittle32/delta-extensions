@@ -17,7 +17,10 @@ export const runJson = <S extends Schema.Constraint>(
       Effect.gen(function* () {
         const process = yield* start(request, limits);
         const chunks = yield* Stream.runCollect(
-          Stream.merge(process.stdout, process.diagnostics),
+          Stream.merge(
+            Stream.merge(process.stdout, process.diagnostics),
+            process.input,
+          ),
         );
         const code = yield* process.exitCode;
         const size = chunks.reduce((n, chunk) => n + chunk.length, 0);
@@ -61,6 +64,7 @@ export const runJson = <S extends Schema.Constraint>(
             exitCode: code,
             stderr: process.stderr(),
           });
+        yield* process.checkInput;
         return value;
       }).pipe(
         Effect.timeoutOrElse({
@@ -93,8 +97,12 @@ export const watchJsonLines = <S extends Schema.Constraint>(
               ).pipe(Effect.flatMap(decodeResponse(schema))),
             ),
           );
-          return Stream.merge(frames, process.diagnostics).pipe(
+          return Stream.merge(
+            Stream.merge(frames, process.diagnostics),
+            process.input,
+          ).pipe(
             Stream.concat(Stream.fromEffectDrain(process.checkExit)),
+            Stream.concat(Stream.fromEffectDrain(process.checkInput)),
           );
         }),
       ).pipe(

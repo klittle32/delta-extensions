@@ -17,17 +17,46 @@ export const validateRequest = (request: ProcessRequest) =>
         ([key, value]) =>
           !Number.isSafeInteger(value) ||
           value <
-            (key === "maxDiagnosticBytes" || key === "forceKillAfterMs"
+            (key === "maxDiagnosticBytes" ||
+            key === "forceKillAfterMs" ||
+            key === "maxInputBytes"
               ? 0
               : 1),
       )
     )
       return yield* new TransportError({ kind: "configuration", stderr: "" });
-    return limits;
+    if (
+      request.stdin !== undefined &&
+      (typeof request.stdin !== "string" ||
+        /[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/u.test(
+          request.stdin,
+        ))
+    )
+      return yield* new TransportError({ kind: "configuration", stderr: "" });
+    if (
+      request.stdin !== undefined &&
+      request.stdin.length > limits.maxInputBytes
+    )
+      return yield* new TransportError({
+        kind: "limit",
+        limit: "input",
+        stderr: "",
+      });
+    const input =
+      request.stdin === undefined
+        ? undefined
+        : new TextEncoder().encode(request.stdin);
+    if (input !== undefined && input.length > limits.maxInputBytes)
+      return yield* new TransportError({
+        kind: "limit",
+        limit: "input",
+        stderr: "",
+      });
+    return { ...limits, input };
   });
 export const start = (
   request: ProcessRequest,
-  limits: ReturnType<typeof limitsFor>,
+  limits: Effect.Success<ReturnType<typeof validateRequest>>,
 ) =>
   Effect.gen(function* () {
     const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
@@ -38,7 +67,10 @@ export const start = (
           env: request.env,
           extendEnv: true,
           shell: false,
-          stdin: "ignore",
+          stdin:
+            limits.input === undefined
+              ? "ignore"
+              : { stream: "pipe", endOnDone: true },
           stdout: "pipe",
           stderr: "pipe",
           killSignal: "SIGTERM",
@@ -92,6 +124,34 @@ export const start = (
       Stream.tap(count),
       Stream.drain,
     );
+    let inputFailed = false;
+    function* inputChunks() {
+      if (limits.input !== undefined)
+        for (let offset = 0; offset < limits.input.length; offset += 65536)
+          yield limits.input.subarray(offset, offset + 65536);
+    }
+    // Own the public sink directly: automatic spawner input streams race their
+    // failures into exitCode, which would hide structured CLI errors/valid frames.
+    const input =
+      limits.input === undefined
+        ? Stream.empty
+        : Stream.fromEffectDrain(
+            Stream.run(
+              Stream.fromIterable(inputChunks(), { chunkSize: 1 }),
+              handle.stdin,
+            ).pipe(
+              Effect.catch(() =>
+                Effect.sync(() => {
+                  inputFailed = true;
+                }),
+              ),
+            ),
+          );
+    const checkInput = Effect.suspend(() =>
+      inputFailed
+        ? Effect.fail(new TransportError({ kind: "input", stderr: stderr() }))
+        : Effect.void,
+    );
     const exitCode = handle.exitCode.pipe(
       Effect.mapError(
         () => new TransportError({ kind: "io", stderr: stderr() }),
@@ -108,5 +168,13 @@ export const start = (
             }),
           ),
     );
-    return { stdout, diagnostics, stderr, exitCode, checkExit };
+    return {
+      stdout,
+      diagnostics,
+      input,
+      checkInput,
+      stderr,
+      exitCode,
+      checkExit,
+    };
   });

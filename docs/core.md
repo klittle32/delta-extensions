@@ -86,7 +86,8 @@ below remain unchanged.
 
 `runJson(request, schema)` returns an Effect containing one decoded JSON document.
 It drains stdout and stderr concurrently, accepts pretty-printed JSON, waits for
-both pipe EOFs and the actual exit result, and returns success only for exit zero.
+both pipe EOFs, input-sink completion and the actual exit result, and returns
+success only for exit zero without a detected input write failure.
 A valid structured CLI error takes precedence over a nonzero code; a nonzero
 exit without usable JSON retains the exit code and bounded stderr diagnostics.
 
@@ -100,9 +101,17 @@ proves exit zero. `Stream.take`, interruption, and error/timeout teardown do not
 certify that the command succeeded or that an unreceived record was delivered.
 
 Requests require an executable, explicit argv, and cwd. The command sets
-`shell: false`, piped output, ignored stdin, and `extendEnv: true`: optional env
+`shell: false`, piped output, and `extendEnv: true`: optional env
 overrides preserve inheritance; an explicitly undefined value removes its key.
-There is no stdin upload/batch writer in this leaf. The spawner owns acquisition
+The input contract follows [pinned threadAppend](https://github.com/zed-industries/delta-claude/blob/ac769c681ba7a95ec7347b591f0858857a1a9e80/hooks/cli/delta-cli.ts#L384).
+Optional immutable string `stdin` is encoded once as UTF-8 with no newline
+changes. Absence keeps stdin ignored; an empty string opens a pipe and sends EOF.
+Lone UTF-16 surrogates are configuration errors rather than silently replaced.
+Input size/configuration are checked before spawn. The public process handle
+stdin sink receives lazy 64 KiB byte views with backpressure and closes on
+completion (`endOnDone: true`). Writing runs concurrently with both output drains
+inside the existing total deadline/scope. No additional runtime or raw Node
+process implementation is used. The spawner owns acquisition
 and termination; the enclosing Effect/Stream scope runs its release finalizer.
 No transport runtime, global process instance, background watcher, unscoped fiber,
 or manual `child_process` implementation is introduced.
@@ -110,13 +119,15 @@ or manual `child_process` implementation is introduced.
 | Request option | Default and meaning |
 | --- | --- |
 | `timeoutMs` | 120,000 ms total acquisition/read/exit lifetime, not idle time |
+| `stdin` | Optional exact string input; absent ignores stdin, empty sends EOF |
+| `maxInputBytes` | 16 MiB total UTF-8 input; zero allows only empty input |
 | `maxOutputBytes` | 16 MiB total across stdout **and stderr**, for either operation |
 | `maxFrameBytes` | 16 MiB per JSONL line, excluding LF but including CR |
 | `maxDiagnosticBytes` | 4,096 retained stderr suffix bytes; zero disables retention |
 | `forceKillAfterMs` | 250 ms SIGTERM grace before platform SIGKILL escalation |
 
 Limits must be safe integers; time/output/frame limits must be positive, diagnostic
-retention/grace may be zero. Watch lifetime and cumulative output are finite too;
+retention/grace/input budgets may be zero. Watch lifetime and cumulative output are finite too;
 callers must deliberately select suitable budgets. No automatic reconnect/retry
 is implied. These defaults are a tested transport boundary, not a claim of complete
 upstream watch policy. Stderr is always drained even when retention is disabled.
@@ -125,12 +136,33 @@ cut multibyte suffix can render a replacement character. Frame buffers grow with
 the configured bound; there is no unbounded line queue or whole watch collection
 inside core. One-shot output is collected within the aggregate byte limit.
 
-`TransportError` distinguishes configuration, output/frame limit, encoding, I/O,
+`TransportError` distinguishes configuration, input/output/frame limit, encoding,
+input write failure (`kind: "input"`), I/O,
 nonzero exit and timeout failures. It carries no argv, environment, or stdout;
 platform failure details are not copied into it. Schema failures remain
 `SchemaError`; structured CLI failures remain `DeltaFailure` with retry hints and
 extensions. No failures are blindly retried. Normal signal termination cannot
 produce a successful numeric exit from the public spawner and fails as I/O.
+
+Input write failures are retained while output drains, so valid JSONL prefixes
+remain observed. A structured CLI error retains precedence; otherwise nonzero
+exit retains precedence over input failure. A valid success response with exit
+zero still fails if the sink detected a write/early-close error. Malformed output
+can instead surface a Schema/encoding/frame error before the final input check;
+that error does not establish successful input delivery. Callers must retain
+unacknowledged records regardless of which failure is reported. A blocked writer,
+including a child that never reads stdin, is bounded by the same timeout;
+interruption or early consumer stop cancels the writer and finalizes the child.
+If a child stays alive after a write failure, draining/exit can reach that timeout.
+Core never adds request input or environment to TransportError; bounded child
+stderr remains diagnostic data as before. No automatic retry is performed.
+
+Sink completion proves successful writes/EOF at the platform pipe boundary, not
+that the child parsed, consumed or durably accepted every byte. In particular a
+small buffered write can finish before a child closes its read end. No submission
+or per-record delivery acknowledgment is inferred; future callers still need
+validated receipts. The default 16 MiB total input fits one maximum outbox record;
+multiple records must fit the configured total budget. No append workflow exists.
 
 Tests prove direct-child exit using the Node handle's exit result plus `isRunning`
 and OS PID checks, including a SIGTERM-ignoring child, early consumption stop,
@@ -209,7 +241,10 @@ Outbox/tooling CI passed at `c46899830de034aa0d16f7f1974eb1477cc4b516`,
 [run 41250090689](https://github.com/klittle32/delta-extensions/actions/runs/41250090689).
 The parent watcher confirmed all three runs. The outbox checkpoint also passed
 121 local tests/build/frozen install and independent blocker recheck.
-Those runs do not cover this subsequent content leaf. Outbox verification adds
+Content checkpoint CI passed at `7078fa2435bba08822feae76353fa5d3e872652f`,
+[run 41250546873](https://github.com/klittle32/delta-extensions/actions/runs/41250546873),
+with 128 tests/nine suites, independently rechecked by the parent.
+None of those checkpoint runs covers this stdin leaf. Outbox verification adds
 47 tests: **121 across eight suites**.
 Red runs exposed missing implementation, empty-lock removal, teardown racing an
 active commit, cached replay hiding corruption, and lost fencing after a later bad
@@ -221,9 +256,15 @@ floating-Effect probe: Oxlint failed with two Effect-rule errors; the probe was
 removed. See [Effect tooling](effect.md) for exact versions and visible warnings.
 
 Content leaf TDD: six expected initial failures (four envelope variants, durable
-replay and malformed optional fields), then seven content tests green. Current
-local suite: **128 tests across nine suites**. Frozen installation and full checks
+replay and malformed optional fields), then seven content tests green: **128 tests across nine suites**. Frozen installation and full checks
 are run with generated output present; this is not live Delta/host acceptance.
+
+Stdin leaf TDD: five initial failures with six existing-behavior passes, then
+14 stdin tests green: **142 tests across ten suites**. Tests cover exact Unicode,
+CRLF/final-line bytes, absent/empty/zero-budget input, pre-spawn rejection,
+duplex pressure, early close with success/nonzero/structured output, observed
+JSONL prefixes, TestClock deadline, blocked one-shot input, interruption and
+consumer-stop cleanup with actual direct-child exit evidence. No live Delta call.
 
 ## Provenance and licensing
 
@@ -238,7 +279,7 @@ Pinned reference: [delta-claude ac769c6](https://github.com/zed-industries/delta
 | --- | --- |
 | Command grammar and email splitting | `hooks/register.tsx` (dedicated menu routing), `hooks/setup/commands.ts`, `hooks/setup/setup.ts` |
 | Contract/status/receipt/error/producer-turn schemas | `hooks/cli/thread-commands.ts` |
-| Transport invariants | `hooks/cli/command-reader.ts`; new Effect implementation and original Node fixtures |
+| Transport invariants | `hooks/cli/command-reader.ts`, `hooks/cli/delta-cli.ts:384` (exact append stdin); new Effect implementation and original Node fixtures |
 | Record envelope, turn constraints and durable outbox semantics | `hooks/recording/outbox.ts`, `hooks/recording/delivery.ts` |
 | Emitted content blocks, tool/title updates and adapted record-content fixture | `hooks/recording/content.ts`, `hooks/recording/title.ts` |
 | Six unchanged JSON test fixtures | `hooks/testing/fixtures/cli/thread-status.*.json`, `thread-append.*.json` |

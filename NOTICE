@@ -22,3 +22,8 @@ hooks/recording/content.ts:60–110,322 at the pinned commit above. Synthetic
 annotations/extension fields and schema validation tests are local modifications.
 Content validation/base64 checks are adapted from the same AGPL-3.0-only source;
 no source files or payloads are read from local protected paths.
+
+Stdin transport leaf: exact JSONL input behavior follows pinned
+hooks/cli/delta-cli.ts:384 (threadAppend). The bounded Effect sink implementation
+and stdin process fixtures/tests are original. No append workflow or actual Delta
+invocation is included; upstream AGPL attribution above remains applicable.
