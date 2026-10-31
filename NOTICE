@@ -27,3 +27,13 @@ Stdin transport leaf: exact JSONL input behavior follows pinned
 hooks/cli/delta-cli.ts:384 (threadAppend). The bounded Effect sink implementation
 and stdin process fixtures/tests are original. No append workflow or actual Delta
 invocation is included; upstream AGPL attribution above remains applicable.
+
+Append-delivery leaf: batching, invocation and receipt-prefix semantics adapted
+from pinned hooks/recording/outbox.ts:44, hooks/recording/delivery.ts:324–355,
+and hooks/cli/delta-cli.ts:135,384. New Effect service, incremental durable receipt
+handling and provider-free Node fixtures/tests are local modifications. No host
+or live Delta calls are included.
+
+Append review regressions: inner-process-scope decoded-error observation and
+uninterruptible reload persistence, public Scope-state admission, original
+SIGTERM-grace fixtures/tests, and explicit appendFailure parity-gap tests.

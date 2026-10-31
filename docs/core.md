@@ -2,12 +2,12 @@
 
 This is a deterministic foundation, not an installable mod or parity certification.
 The core now includes scoped subprocess JSON/JSONL transport, alongside pure command
-parsing, Effect Schema validation and durable producer storage. Transport requires the injected Effect
+parsing, Effect Schema validation, durable producer storage and one-attempt append delivery. Transport requires the injected Effect
 `ChildProcessSpawner` service; the separate `@delta-extensions/core/node` entry
 exports `nodeProcessLayer` backed by exact-pinned `@effect/platform-node` 4.1.1.
 Core creates no runtime. Tests run real Node fixture processes and inject spawner
 layers and TestClock. There is still no authentication, upload, installation,
-Delta binary invocation, submission, host adapter or workflow implementation.
+live Delta binary invocation, host adapter or end-to-end workflow implementation.
 
 Command parsing retains dedicated-command context: bare `/delta-org` returns a
 `team-menu` intent, and bare `/delta-join` returns a join prompt intent (null
@@ -32,7 +32,8 @@ noninteractive fallback still belong to the future adapter.
   mismatched receipts fail visibly; this helper deletes nothing and assumes no
   delivery after a validation failure. Callers must retain records until their
   durable receipt handling succeeds. The transport below supplies JSONL framing,
-  but does not persist or correlate receipts automatically.
+  but does not persist or correlate receipts automatically. The append delivery
+  owner below explicitly validates and persists receipts for its selected batch.
 - `ProducerTurnEvent` covers only `producer.turn`, including supersession.
   Other watch events and full snapshot reconstruction are not supported yet.
 - `decodeResponse(schema)` checks a structured `error` before success decoding.
@@ -230,6 +231,132 @@ Test-only explicit lock removal demonstrates intact reopen versus refusal of an
 ambiguous journal; production code never does this. No raw Node persistence syscall
 or hidden runtime was needed. No submission/network operation is provided.
 
+## One-attempt append delivery
+
+`makeAppendDelivery(options)` requires the bound `ProducerOutbox` and a Scope;
+`AppendDelivery` / `appendDeliveryLayer(options)` provide the same functional
+owner through Effect services. `attempt` is an Effect using the injected process
+spawner at execution; `progress` returns a defensive copy of the latest in-memory
+attempt progress, including after cancellation. Core creates no runtime, persistent worker,
+watcher or retry loop. Each invocation uses a fiber forked into the owner Scope;
+caller interruption is forwarded to that fiber and awaits its cleanup. Create one
+owner for an outbox; attempts are single-flight within that owner. This is a
+caller obligation, not a globally enforced registry: two owners can submit
+overlapping batches. Exact repeated receipts can still be durably idempotent;
+that does not serialize two owners' subprocesses. Concurrent calls wait interruptibly, then select fresh pending
+records. Owner teardown interrupts its invocation fibers, waits for child cleanup and
+closes admission. Admission also reads public `Scope.state`: it is `Closed`
+from the start of closing, before the late boolean finalizer runs. Calls during
+a blocked mid-close finalizer fail closed without spawning. Process scopes own
+child finalization, including calls made
+from an outer caller fiber.
+
+Options require an explicit executable, cwd, reference, expected threadId,
+producerName and acknowledgement (`local` or `server`). Expected threadId must
+match the bound store before any subprocess; source/externalId come exclusively
+from that store, never a hard-coded Claude identity. Reference **must be an already
+verified binding/locator for the expected thread**. It is not independently
+resolved here; no URL shape proves its identity. Receipt validation happens after
+CLI side effects and cannot protect against a caller routing bytes to the wrong
+thread. This operation does not establish a sharing/binding workflow.
+
+An empty replay performs no subprocess work. A nonempty attempt first runs
+`--json thread contract` and negotiates contract 8, with no version/cache guess.
+It selects whole immutable replay lines up to **2,000,000 UTF-8 bytes**; one larger
+record is allowed alone up to the existing **16 MiB** maximum. It neither rewrites
+bytes nor splits/resequences records. The selected prefix is fixed before contract
+negotiation; later staged records are never treated as sent. Invocation is:
+
+```text
+--json thread append REFERENCE --source SOURCE --external-id EXTERNAL_ID
+[--acknowledge local] --producer-name PRODUCER_NAME
+```
+
+`server` selects the CLI's default acknowledgement behavior (omits that option).
+`local` explicitly asks for local persistence; neither result is an independent
+upload-status check. Transport budgets may be configured; each command has its
+own total deadline. The attempt can therefore take a contract deadline plus an
+append deadline and filesystem finalization time. There is no whole-workflow timer.
+
+Receipts are decoded incrementally with the existing Schema/transport. Each must
+match the exact next sent sequence, thread and nullable original turn before it
+can reach outbox receipt application. One receipt is durably applied at a time.
+The matched observation, write and progress update are uninterruptible together;
+interruption/timeout can wait for filesystem work, and is never turned into a
+successful result. Malformed, wrong, repeated/reordered or extra receipts cannot
+acknowledge an unsent record. Valid `duplicate` and `fenced` dispositions count as
+accounted-for records, with fenced turns retained for the future host to stop.
+This leaf does not perform that host cancellation.
+
+A result is `empty` or `complete` **for the selected batch**, not for the current
+queue, server upload or all records ever staged. Progress contains:
+
+- `batch`: exact selected sequences; `deferred`: the original unsent suffix at
+  selection time, excluding records staged afterward.
+- `observed`: the ordered matching receipt prefix; `committed`: its confirmed
+  durable prefix; `remainingBatch`: selected sequences not confirmed durable.
+- `fenced`: matching observed fences, retained even when their receipt persistence
+  fails; `reloadObserved`: a valid reload envelope was decoded inside the process
+  lifetime, not merely written/read as bytes; `pausePersisted`: this attempt
+  confirmed a durable reload pause.
+- `phase` and explicit acknowledgement choice. Phase identifies the attempted
+  operation, not proof that a child started or the server accepted input.
+
+`DeliveryAttemptError` carries the typed underlying `failure`, progress and explicit
+retry hint (`retryDecision` for structured CLI errors; otherwise `unknown`). No
+retry occurs. For append, a valid `reload_required` is observed and its pause
+attempted uninterruptibly **inside the frame decoder and process resource Scope**,
+before the error can trigger child teardown. Decode and observation are masked
+together; caller cancellation or owner close during SIGTERM/SIGKILL grace cannot
+skip persistence by bypassing an outer error handler. This is not an outer
+`tapError` after resource release. `reloadObserved` may be true while
+`pausePersisted` is false during persistence or after its failure. If pause
+persistence fails, `pauseFailure` is retained alongside the original CLI failure;
+no pause is claimed. Ambiguous filesystem writes keep the existing poisoned
+outbox/lock behavior. In-memory progress is not a replacement recovery journal.
+
+If timeout or cancellation wins during child teardown, the terminal failure may
+not name the already-observed reload; a timeout can carry an `unknown` retry hint.
+Callers must honor `reloadObserved`, `pausePersisted` and the durable outbox pause
+rather than treating the retry hint alone as permission to continue. The timeout
+case is covered by a real-child SIGTERM-grace regression.
+
+Empty or shortened successful output is an explicit `incomplete` failure, never an
+inferred receipt. A previously committed prefix remains committed through later
+schema/correlation errors, structured failures, nonzero exit, output limit,
+interruption or child crash. On persistence failure, an observed receipt may
+already have reached disk without confirmation: `committed` is a conservative
+confirmed prefix, not a claim that other records were unaccepted. Pending records
+can also have reached Delta despite absent receipts. Do not infer non-acceptance
+or manufacture new records/sequences from any attempt failure.
+
+### Remaining append parity differences
+
+This is not full append parity. The public generic watch contract remains
+fail-fast and unchanged. Two append-specific differences are explicitly tested:
+
+- **Malformed line before a later reload envelope:** a malformed JSON/frame/schema
+  failure ends this receipt stream, so a later envelope may never be decoded or
+  paused. Pinned `appendFailure` scans captured raw stdout from the end on nonzero
+  exit and can find that later error. Here `reloadObserved` stays false for an
+  unexamined envelope; the confirmed receipt prefix survives and the suffix stays
+  pending/uncertain. There is no claim that raw bytes prove a decoded reload.
+- **Valid error envelope with exit zero:** the generic stream treats it as a
+  `DeltaFailure` and a decoded reload pauses the outbox regardless of exit status.
+  Pinned append delivery classifies error envelopes only for nonzero exits; its
+  zero-exit acknowledgment mismatch is `invalid_acknowledgment`. No append-specific
+  raw-output scanner or exit-dependent envelope classifier is implemented here.
+
+Pinned authorities:
+[threadContract/threadAppend](https://github.com/zed-industries/delta-claude/blob/ac769c681ba7a95ec7347b591f0858857a1a9e80/hooks/cli/delta-cli.ts#L384),
+[appendPending](https://github.com/zed-industries/delta-claude/blob/ac769c681ba7a95ec7347b591f0858857a1a9e80/hooks/recording/delivery.ts#L324),
+and [batching](https://github.com/zed-industries/delta-claude/blob/ac769c681ba7a95ec7347b591f0858857a1a9e80/hooks/recording/outbox.ts#L44).
+The new implementation persists each validated receipt incrementally rather than
+waiting to save a captured stdout prefix. Fixtures are original actual Node child
+programs; test-only file gates make post-receipt failure/crash ordering deterministic.
+No real Delta executable/service/account, installation, authentication, watch,
+retry loop, snapshot or adapter workflow was exercised or implemented here.
+
 ## Verification record
 
 Foundation CI passed **48 tests** at
@@ -244,7 +371,10 @@ The parent watcher confirmed all three runs. The outbox checkpoint also passed
 Content checkpoint CI passed at `7078fa2435bba08822feae76353fa5d3e872652f`,
 [run 41250546873](https://github.com/klittle32/delta-extensions/actions/runs/41250546873),
 with 128 tests/nine suites, independently rechecked by the parent.
-None of those checkpoint runs covers this stdin leaf. Outbox verification adds
+Stdin checkpoint CI passed at `beb0ed328e305dea33afaaad4d6af903b3a81b54`,
+[run 41251535751](https://github.com/klittle32/delta-extensions/actions/runs/41251535751),
+with 142 tests, independently reviewed and fullchecked by the parent.
+None of those checkpoint runs covers this append-delivery leaf. Outbox verification adds
 47 tests: **121 across eight suites**.
 Red runs exposed missing implementation, empty-lock removal, teardown racing an
 active commit, cached replay hiding corruption, and lost fencing after a later bad
@@ -266,6 +396,26 @@ duplex pressure, early close with success/nonzero/structured output, observed
 JSONL prefixes, TestClock deadline, blocked one-shot input, interruption and
 consumer-stop cleanup with actual direct-child exit evidence. No live Delta call.
 
+Append-delivery TDD began with a missing-module failure. Three later red tests
+caught lost reload pause on interruption, lost observed fence on persistence
+failure, and owner teardown failing to cancel an outer caller's active attempt;
+all were corrected. That checkpoint had **33 new tests; 175 total across fourteen suites**.
+Coverage includes real argv/metadata, contract refusal, byte-exact Unicode batch
+boundaries/maximum record, receipt prefix errors, actual output limits, concurrent
+staging/single-flight, interrupted direct-child teardown, child SIGKILL/reopen,
+partial receipt/pause reopen, ambiguous injected writes and real service/layer use.
+Review task71 reproduced a further gap: a decoded reload was lost when
+interruption arrived during SIGTERM grace before the outer catch. A red run
+showed two lost-pause failures (caller/owner) plus mid-close admission failing
+the typed-closed check; the no-interruption control passed. Inner-scope decode/
+pause ownership fixes both teardown paths; mid-close admission now checks public
+Scope state. Six review tests cover these cases and the two disclosed parity
+differences: **181 tests across fifteen suites**. Real-child tests use a SIGTERM
+marker, a 1,500 ms forced-kill grace and interruption 200 ms into teardown, and
+check actual handle exit plus OS PID absence. Full checks and frozen installation
+run with build output present. No remote CI
+for this uncommitted delivery leaf is claimed.
+
 ## Provenance and licensing
 
 The root [LICENSE](../LICENSE) is AGPL-3.0-only; [NOTICE](../NOTICE) identifies
@@ -280,7 +430,7 @@ Pinned reference: [delta-claude ac769c6](https://github.com/zed-industries/delta
 | Command grammar and email splitting | `hooks/register.tsx` (dedicated menu routing), `hooks/setup/commands.ts`, `hooks/setup/setup.ts` |
 | Contract/status/receipt/error/producer-turn schemas | `hooks/cli/thread-commands.ts` |
 | Transport invariants | `hooks/cli/command-reader.ts`, `hooks/cli/delta-cli.ts:384` (exact append stdin); new Effect implementation and original Node fixtures |
-| Record envelope, turn constraints and durable outbox semantics | `hooks/recording/outbox.ts`, `hooks/recording/delivery.ts` |
+| Record envelope, turn constraints, batching and append-delivery semantics | `hooks/recording/outbox.ts`, `hooks/recording/delivery.ts` |
 | Emitted content blocks, tool/title updates and adapted record-content fixture | `hooks/recording/content.ts`, `hooks/recording/title.ts` |
 | Six unchanged JSON test fixtures | `hooks/testing/fixtures/cli/thread-status.*.json`, `thread-append.*.json` |
 
@@ -288,4 +438,4 @@ Fixtures are deterministic upstream contract examples, not evidence of installed
 CLI execution or live collaboration. Only Linux x64, Bun 1.4.4 and Node 22.23.4
 have been exercised here; no host/backend/UI, Windows, macOS, real Delta, or
 multi-client behavior has been verified. CI defines the same provider-free checks;
-the two checkpoint CI runs identified above have been observed; neither covers this leaf.
+the five checkpoint CI runs identified above have been observed; none covers this leaf.

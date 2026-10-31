@@ -1,5 +1,5 @@
 import { Effect, Schema, Stream } from "effect";
-import { jsonLines } from "./jsonl.js";
+import { watchJsonLinesObserved } from "./jsonl-process.js";
 import { start, validateRequest } from "./process-session.js";
 import { decodeResponse } from "./protocol.js";
 import { type ProcessRequest, TransportError } from "./transport-errors.js";
@@ -79,40 +79,4 @@ export const runJson = <S extends Schema.Constraint>(
 export const watchJsonLines = <S extends Schema.Constraint>(
   request: ProcessRequest,
   schema: S,
-) =>
-  Stream.unwrap(
-    Effect.gen(function* () {
-      const limits = yield* validateRequest(request);
-      return Stream.unwrap(
-        Effect.gen(function* () {
-          const process = yield* start(request, limits);
-          const frames = jsonLines(
-            process.stdout,
-            limits.maxFrameBytes,
-            process.stderr,
-          ).pipe(
-            Stream.mapEffect((line) =>
-              Schema.decodeEffect(Schema.fromJsonString(Schema.Unknown))(
-                line,
-              ).pipe(Effect.flatMap(decodeResponse(schema))),
-            ),
-          );
-          return Stream.merge(
-            Stream.merge(frames, process.diagnostics),
-            process.input,
-          ).pipe(
-            Stream.concat(Stream.fromEffectDrain(process.checkExit)),
-            Stream.concat(Stream.fromEffectDrain(process.checkInput)),
-          );
-        }),
-      ).pipe(
-        Stream.interruptWhen(
-          Effect.sleep(limits.timeoutMs).pipe(
-            Effect.andThen(
-              Effect.fail(new TransportError({ kind: "timeout", stderr: "" })),
-            ),
-          ),
-        ),
-      );
-    }),
-  );
+) => watchJsonLinesObserved(request, schema);

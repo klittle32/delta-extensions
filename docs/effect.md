@@ -46,7 +46,7 @@ and the installed 0.63.0 README/matrix. The resulting configuration uses:
 No Oxlint rule is suppressed. Real findings were corrected: typed decoders for
 known encoded values, selective `catchIf`, concrete test error channels, and
 Effect-valued `replay`/`snapshot` service members instead of lazy zero-argument
-functions. The remaining **141 warnings**, all `effecttsgo/unstable-api-usage`,
+functions. The remaining **164 warnings**, all `effecttsgo/unstable-api-usage`,
 are intentionally visible: the required exact-pinned Effect process, filesystem,
 path, digest and Node services, and @effect/vitest APIs carry upstream unstable
 annotations. These warnings are not zero diagnostics and do not certify API
@@ -121,6 +121,26 @@ process singleton; a future host adapter owns its runtime and abort bridge.
   Late records retain the
   caller's original turn sequence. Recovery/workflows remain outside this leaf.
 
+The append-delivery owner composes `ProducerOutbox`, contract negotiation and
+JSONL transport through Context services and an actual Layer. A Semaphore owns
+single-flight attempts; a closed owner refuses new work. Each invocation uses
+`Effect.forkIn` with the owner Scope, with an atomic fork/join bridge forwarding
+caller interruption via `Fiber.interrupt`. Owner close also interrupts invocations
+made from outer fibers; no fiber persists between attempts. Incremental receipt
+correlation precedes individual durable application. Receipt observation/application
+use uninterruptible sections so progress and fencing cannot be lost there. Append
+reload observation/pause runs inside the internal JSONL frame decoder, before
+its process Scope unwinds. The decode + typed-error observer is uninterruptible:
+a cancellation during child SIGTERM grace cannot bypass pause persistence via
+the outer catch. Generic public `watchJsonLines` supplies no observer and retains
+its original fail-fast semantics. `reloadObserved` distinguishes a decoded
+envelope from successful pause persistence and from merely written/read bytes.
+Admission checks the public stable `Scope.state` Closed tag, which is set as
+closing starts; it does not depend on the late finalizer flag. No background worker/runtime or
+automatic retry exists. Child command deadlines remain finite; teardown may wait
+for uninterruptible filesystem work. The last-progress Effect is a defensive
+in-memory snapshot, useful after interruption, not a durable recovery authority.
+
 Actual Node process fixtures use raw stdout/env/timers only inside test child
 programs to exercise pipe/lifecycle boundaries. The outbox crash fixture runs an
 owned test runtime in a real Bun child; the parent kills it via the Effect
@@ -141,7 +161,14 @@ also covered 121 local tests/build/frozen install and independent blocker rechec
 Content checkpoint `7078fa2435bba08822feae76353fa5d3e872652f` passed
 [CI 41250546873](https://github.com/klittle32/delta-extensions/actions/runs/41250546873)
 with 128 tests/nine suites, independently rechecked by the parent. The subsequent
-stdin leaf adds 14 tests (142 total). No remote CI for the stdin leaf is claimed.
+stdin checkpoint `beb0ed328e305dea33afaaad4d6af903b3a81b54` passed
+[CI 41251535751](https://github.com/klittle32/delta-extensions/actions/runs/41251535751),
+with 142 tests and independent review/fullcheck. Append delivery adds 33 tests
+(175 total across fourteen suites). Review regressions add seven tests (182 total
+across fifteen suites), including actual SIGTERM-grace cancellation, timeout and
+mid-close admission. The malformed-before-envelope and zero-exit-envelope append parity
+differences remain explicit in [core boundaries](core.md); this is not full
+append parity. No remote CI for this delivery leaf is claimed.
 
 The process and outbox tests use real local files/processes and injected services
 for failure/deadline boundaries. They are not live Delta or Letta acceptance.

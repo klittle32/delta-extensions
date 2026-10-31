@@ -9,7 +9,7 @@ the shared engine and harness adapters.
 **Core foundation built; host prerequisites in development. No installable mod exists yet.**
 
 `packages/core` now provides command parsing and a tested, bounded contract-8
-Schema subset, scoped subprocess JSON/JSONL transport, and a durable local producer outbox. See [the exact built boundary and provenance](docs/core.md).
+Schema subset, scoped subprocess JSON/JSONL transport, a durable local producer outbox, and one-attempt append delivery. See [the exact built boundary and provenance](docs/core.md).
 This is not full parity certification.
 
 The target is full functional parity with Zed's
@@ -41,10 +41,10 @@ reviewed October 31, 2026. Delta CLI contract **8**, introduced in Delta **0.22.
 
 ```text
 packages/
-  core/          # Built: command parsing, bounded schemas, JSON/JSONL transport, durable outbox
+  core/          # Built: command parsing, bounded schemas, JSON/JSONL transport, durable outbox, one-attempt append delivery
 ```
 
-Delta submission, recovery workflows and the Letta adapter are not built. Later adapters may target Pi, Grok,
+End-to-end Delta workflows, recovery UI and the Letta adapter are not built. Later adapters may target Pi, Grok,
 Codex, Prime Agent, and other harnesses. Add them only when their implementation
 starts; do not create empty adapters or speculative framework layers.
 
