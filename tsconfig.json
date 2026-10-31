@@ -11,11 +11,7 @@
     "plugins": [
       {
         "name": "@effect/language-service",
-        "ignoreEffectWarningsInTscExitCode": false,
-        "ignoreEffectErrorsInTscExitCode": false,
-        "diagnosticSeverity": {
-          "unstableApiUsage": "message"
-        }
+        "diagnostics": false
       }
     ],
     "resolveJsonModule": true

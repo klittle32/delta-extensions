@@ -1,161 +1,144 @@
-# Effect 4.1 direction
+# Effect 4.1 implementation and tooling
 
-Research checked live npm metadata and published source on **October 31, 2026**.
-The core foundation now compiles against these published versions; see the
-workspace manifests and `bun.lock`. The process leaf installs the Node platform
-package; the Bun platform package remains uninstalled.
+Verified npm metadata, published declarations and installed source on October 31,
+2026. Current manifests and `bun.lock` exact-pin direct dependencies. Stable 4.1.1
+is required; the `effect@beta` tag is not the intended release.
 
-## Verified versions
-
-| Dependency/tool | Version |
+| Dependency/tool | Exact version |
 | --- | --- |
 | `effect` | 4.1.1 |
 | `@effect/platform-node` | 4.1.1 |
-| `@effect/platform-bun` | 4.1.1 |
+| `@effect/platform-node-shared` (lockfile) | 4.1.1 |
 | `@effect/vitest` | 4.1.1 |
 | `typescript` | 7.0.2 |
 | `@effect/tsgo` | 0.63.0 |
+| `oxlint` | 1.90.0 |
+| `oxlint-tsgolint` | 7.0.2005 |
 | `vitest` | 5.0.5 |
-| `@biomejs/biome` | 2.6.4 |
+| `@biomejs/biome` (formatter only) | 2.6.4 |
+| Bun | 1.4.4 |
+| Node tested | 22.23.4 |
 
-Pin the Effect package family consistently. `effect@beta` points to an older
-pre-release, not stable 4.1.1. The published Effect 4 README requires Node 22.19+
-and TypeScript 5.9+, recommending TypeScript 7. `@effect/vitest` 4.1.1 requires
-Vitest 5. Select only the platform packages actually exercised by the product.
+Effect requires Node 22.19+ and TypeScript 5.9+, recommending TS 7. The installed
+@effect/tsgo 0.63.0 supported matrix explicitly includes TypeScript 7.0.2, Oxlint
+1.90.0 and oxlint-tsgolint 7.0.2005. Versions were checked before installation.
+The Bun platform package is not installed; Node platform services are exercised
+by actual process/filesystem tests. No additional persistence dependencies exist.
 
-## Architecture
+## Native TypeScript and Oxlint
 
-Start with a shared Delta core; add the Letta adapter when actual host integration starts. Keep the platform
-implementation behind services within core; split another package only if reuse
-or dependency boundaries justify it. Do not add an unrelated standalone CLI.
+Kyle requested native tsgo and the documented Effect Oxlint integration. Read the
+[live Effect Oxlint setup](https://raw.githubusercontent.com/Effect-TS/tsgo/main/docs/README.md)
+and the installed 0.63.0 README/matrix. The resulting configuration uses:
 
-- `Context.Service` contracts and explicitly wired `Layer` implementations.
-- `Schema` decoders for CLI results/events, persisted state and user inputs.
-- Tagged domain errors, targeted recovery, and explicit defect reporting.
-- Effect `FileSystem`/`Path` services for persistence and test substitutions.
-- Scoped `ChildProcess`/`ChildProcessSpawner`, with simultaneous stdout/stderr
-  consumption, bounded frames, inspected exit codes and owned termination.
-- `Stream` for watch/mount output; bounded queues and serialization where durable
-  record ordering demands them; owned fibers for session lifetimes.
-- `Schedule`/clock-driven retries only where Delta declares retryability; honor
-  `retry_after_ms` and retain exact immutable records.
-- `ManagedRuntime` at the host boundary only; bridge host abort signals and close
-  all scopes at teardown. Prove async shutdown fits Letta's disposer contract.
-- Structured logs/spans with identifiers, not transcript dumps, credentials or
-  full child environments. Keep model/human/persisted visibility distinct.
+- `prepare`: `effect-tsgo patch --typescript --oxlint`, validating and patching
+  native TypeScript, the Oxlint binding/declarations and tsgolint.
+- `.oxlintrc.json`: the shipped `oxlint-schema.json` and
+  `oxlint-presets/recommended.json`, which enable type-aware mode and `effecttsgo`.
+- `lint`: `effect-tsgo oxlint --type-aware .`, the documented direct wrapper.
+  Oxlint owns both general lint and Effect semantic diagnostics.
+- tsconfig plugin `@effect/language-service` with `diagnostics: false`, as the
+  live guide recommends to avoid duplicate LSP diagnostics. Native compilation,
+  quick information and editor integration remain enabled.
+- Biome formatting only: its linter and assists are disabled. No duplicate Biome
+  lint pass or separate tsgo semantic-diagnostics pass runs in `check`.
 
-Use Effect primitives for the concurrency, resource ownership, validation and
-error handling they provide. Pure strings and lookup tables need not be effects.
-Effect cannot manufacture host capabilities that Letta does not expose.
+No Oxlint rule is suppressed. Real findings were corrected: typed decoders for
+known encoded values, selective `catchIf`, concrete test error channels, and
+Effect-valued `replay`/`snapshot` service members instead of lazy zero-argument
+functions. The remaining **113 warnings**, all `effecttsgo/unstable-api-usage`,
+are intentionally visible: the required exact-pinned Effect process, filesystem,
+path, digest and Node services, and @effect/vitest APIs carry upstream unstable
+annotations. These warnings are not zero diagnostics and do not certify API
+stability. The shipped recommended severity policy fails errors and reports
+warnings; this project has not disabled rules or promoted away these annotations.
 
-## Version-specific API notes
+A temporary floating-Effect source probe made `bun run lint` exit nonzero with
+**two `effecttsgo/floating-effect` errors**, even with LSP diagnostics disabled.
+The probe was then removed. This proves the actual Effect Oxlint rules execute,
+rather than relying only on a successful compiler or an unpatched lint binary.
 
-- Process imports are from **`effect/process`**, not v3's
-  `@effect/platform/Command` or the old beta `effect/unstable/process` path.
-  Published process APIs are still annotated **unstable**: isolate and exact-pin
-  them even though the overall Effect release is stable.
-- `Context.Service`, not `Context.Tag` or `Effect.Service`; no generated
-  `.Default` layer.
-- Config constructors are capitalized: `Config.String`, `Config.Duration`, etc.
-- `Schema.decodeUnknownEffect`, `Schema.fromJsonString`, `Schema.Literals([...])`.
-- Tagged errors use `Schema.TaggedError`; general recovery is `Effect.catch`.
-- Supplying child `env` replaces inheritance unless `extendEnv: true` is set.
-  Prefer explicit argv and `shell: false`; do not rely on ambient shell parsing.
-- Output convenience methods do not by themselves prove a successful exit.
+VS Code recommendations retain the native TypeScript extension and Biome
+formatter, add `oxc.oxc-vscode`, enable type-aware Oxlint, point it at the patched
+workspace binary, and disable Oxfmt to keep one formatter. The settings were
+checked against the official extension manifest; editor GUI behavior remains
+untested. CLI and CI use the executable checks below.
 
-## Developer tooling and tests
+## Commands
 
-Use strict TypeScript, including unchecked-index and optional-property checks.
-Prefer the documented native **`@effect/tsgo`** route for TypeScript 7, rather than
-blindly applying the older JavaScript compiler-patching language-service workflow.
-Its compiler invocation and Effect semantic diagnostics should be part of CI.
-Configure editor support and Biome formatting/linting with the first code slice.
+```sh
+bun install --frozen-lockfile
+bun run check
+```
 
-Use `@effect/vitest` with injected layers, TestClock, fixtures and property tests
-where useful. Both `it.effect` and `it.live` provide a fresh scope in v4. Test
-finalization, cancellation, retry timing and ordering, not only happy-path values.
-Keep fake-protocol tests distinct from live host/Delta integration evidence.
+`check` runs `typecheck`, `lint`, `format:check`, `test`, then `build`, once each.
 
-The workspace now provides reproducible setup/build/test/typecheck/lint/format/Effect-check
-commands (see below). Avoid a checklist claiming “all best
-practices” without executable checks and a focused architectural review.
+| Script | Actual command |
+| --- | --- |
+| `typecheck` | `effect-tsgo tsc --noEmit` |
+| `lint` | `effect-tsgo oxlint --type-aware .` |
+| `effect-check` | Compatibility alias for `bun run lint`; omitted from `check` to avoid duplication |
+| `format:check` | `biome format .` |
+| `format` | `biome format --write .` |
+| `test` | `vitest run` |
+| `build` | `effect-tsgo tsc -p tsconfig.build.json` |
+
+Generated `dist` files are excluded from TS, Oxlint and formatting. Source/tests
+remain checked, including original process fixtures. Provider-free GitHub CI runs
+frozen installation and the same `check`; no Delta or model-provider credentials
+are needed. Full checks and frozen installation are repeated with output present.
+
+## Ownership and API choices
+
+Keep protocol/persistence host-independent. Use public Effect services, typed
+Schema failures, scoped resources and structured concurrency where they solve the
+problem. Pure command grammar stays pure. Core contains no runtime or global
+process singleton; a future host adapter owns its runtime and abort bridge.
+
+- `Context.Service` and explicit `Layer` wiring; no old Context.Tag or hidden
+  generated Default layers. Effect 4 Schema uses `decodeUnknownEffect` at unknown
+  boundaries and `decodeEffect` for known encoded strings.
+- Process imports are `effect/process`, not v3 Command or beta unstable paths.
+  Explicit argv/cwd, shell false, inherited env plus overrides, concurrent output
+  draining and actual exit checks are exercised. Scopes own termination.
+- `FileSystem`, `Path`, `Semaphore` and `Digest` services own durable producer
+  state. `File.sync`, directory sync, exclusive opens, atomic rename and scoped
+  finalizers use public APIs; no raw Node persistence syscall was needed.
+- JSON schemas distinguish CLI contract 8, record schemaVersion 1 and local
+  journal format 1. Text/tool/title validation is a coherent declared subset,
+  not permissive acceptance of unknown controls or complete protocol support.
+- No retries of non-idempotent writes or automatic recovery. A local writer lock
+  fails closed after crashes, real validation/read failures or ambiguous persistence.
+  Interrupt-only guard cancellation does not poison ownership; commits remain
+  uninterruptible. Lock-release finalizer failures become defects via `orDie`.
+  Late records retain the
+  caller's original turn sequence. Recovery/workflows remain outside this leaf.
+
+Actual Node process fixtures use raw stdout/env/timers only inside test child
+programs to exercise pipe/lifecycle boundaries. The outbox crash fixture runs an
+owned test runtime in a real Bun child; the parent kills it via the Effect
+spawner. These are test programs, not library subprocess implementations or
+hidden production runtimes. Test-only explicit lock removal demonstrates recovery
+boundaries; core never reclaims a stale lock on its own.
+
+## Evidence and limits
+
+Foundation CI: **48 tests**, commit `5f8de2579be95bf7b95ab7c0a651018b01ab347b`,
+[run 41245700377](https://github.com/klittle32/delta-extensions/actions/runs/41245700377).
+Process checkpoint CI: **74 tests**, commit `3bdc8c0`,
+[run 41247550048](https://github.com/klittle32/delta-extensions/actions/runs/41247550048).
+Both were confirmed by the parent watcher. Neither verifies this uncommitted
+outbox/tooling leaf. Current local results are reported with delivery.
+
+The process and outbox tests use real local files/processes and injected services
+for failure/deadline boundaries. They are not live Delta or Letta acceptance.
+Linux direct-child cleanup and local POSIX storage have been exercised; no Windows,
+macOS, NFS, distributed locking, descendant-tree termination or power-cut test has
+been performed. Full parity remains the product target. See [core boundaries](core.md).
 
 ## References
 
-- [Effect package](https://www.npmjs.com/package/effect)
-- [Effect releases](https://github.com/Effect-TS/effect/releases)
 - [Effect v4 API](https://effect.website/docs/v4/api/effect)
-- [Effect v4 configuration](https://effect.website/docs/v4/configuration)
-- [Effect v4 Schema](https://effect.website/docs/v4/api/effect/Schema)
-- [Effect native TypeScript tooling](https://www.npmjs.com/package/@effect/tsgo)
-
-## Executable foundation evidence
-
-Verified npm metadata before installation: Effect and @effect/vitest 4.1.1,
-TypeScript 7.0.2, @effect/tsgo 0.63.0, Vitest 5.0.5, Biome 2.6.4. Bun is 1.4.4;
-Node tested is 22.23.4. The process leaf exact-pins `@effect/platform-node` 4.1.1;
-its shared backend resolves to 4.1.1 in `bun.lock`.
-Published source confirmed `StructWithRest`, `optionalKey`, `check`/`makeFilter`,
-`decodeUnknownEffect` and `Schema.TaggedError` signatures; compiled tests exercise them.
-
-- `bun install --frozen-lockfile`: exact lockfile; prepare patches native TypeScript
-  using published `effect-tsgo patch --typescript --no-oxlint` for editor support.
-- `bun run typecheck`: `effect-tsgo tsc --noEmit`.
-- `bun run effect-check`: `effect-tsgo diagnostics --project tsconfig.json --strict`.
-- `bun run build`: `effect-tsgo tsc -p tsconfig.build.json`, JS plus declarations.
-- `bun run test`: Vitest 5 with @effect/vitest effect tests and injected inputs.
-- `bun run lint` / `bun run format`: Biome check / check --write.
-- `bun run check`: all checks above except formatting mutations.
-
-The plugin name is `@effect/language-service`, even with the native @effect/tsgo
-route; using the package name as the plugin name silently skips semantic checks.
-A temporary floating-Effect probe produced two semantic errors and nonzero exit;
-it was removed. Diagnostics check every source/test file. The exact-pinned
-@effect/vitest API carries an upstream unstable annotation; its diagnostic is
-retained at message severity, while other warnings and all errors fail checks.
-Suggestions remain advisory. The foundation semantic check reported **0 errors,
-0 warnings, and 17 informational messages/suggestions**, including the upstream
-unstable test API notices and typed-decoder suggestions; this is not a claim of
-zero diagnostics. No JS compiler-patching plugin is installed.
-VS Code settings follow the published native setup preview; editor GUI behavior
-has not been acceptance tested. CI uses no provider credentials.
-
-Initial red run: two missing-module suites. A later regression test produced one
-failure (44 passed) for accepted unsupported control keys; validation was corrected.
-Final counts and full command results are reported with delivery. The original foundation owned
-no runtime/resources. The process leaf now exercises scoped process ownership,
-platform layers and TestClock, as described below. See [core boundaries](core.md).
-
-
-## Scoped process leaf
-
-Verified published metadata before installing `@effect/platform-node@4.1.1`.
-Inspected installed public `effect/process/ChildProcess`, `ChildProcessSpawner`,
-`Stream`, `Effect`, and `@effect/platform-node` declarations and implementations.
-The process APIs and platform wiring remain upstream **unstable**, exact-pinned,
-and isolated in `process-session.ts` / `node.ts`; their informational annotations
-remain visible alongside the test API messages. No new runtime is created.
-
-`runJson` and `watchJsonLines` require `ChildProcessSpawner`. The separate Node
-entry exports its actual service layer using Node filesystem/path dependencies.
-`ChildProcess.make(executable, args, options)` explicitly sets cwd, shell false,
-env inheritance, pipe outputs, ignored stdin, and termination escalation. Spawn
-uses the provider's scoped acquisition/release rather than custom Node process
-management. Both pipes drain concurrently with aggregate byte limits and bounded
-stderr retention. Natural completion checks the handle's exit result; timeout,
-cancellation and early stop await resource release through Scope.
-
-Tests use actual Node child programs, an observed/decorated real spawner layer,
-and TestClock-driven deadlines. Additional injected blocked-spawner tests prove
-deadlines cover acquisition. No fake-CLI test is labeled live Delta verification.
-The installed public declarations do not export the source-internal
-`UnknownFromJsonString`; compiled code uses `fromJsonString(Schema.Unknown)`.
-Generated `dist` declarations are excluded from project semantic checks as well
-as Biome to keep repeated checks focused on source/tests.
-
-Process-leaf checks retain informational process/test unstable-API messages and
-suggestions; **zero errors/warnings does not mean zero diagnostics**. The process-leaf semantic check reports **0 errors, 0 warnings,
-and 64 informational messages/suggestions** across 14 source/test files. Foundation remote CI evidence is scoped to
-its 48 tests at [run 41245700377](https://github.com/klittle32/delta-extensions/actions/runs/41245700377);
-this uncommitted process leaf has not run remotely. No OS termination guarantee
-beyond the locally tested Linux direct-child cases is claimed.
+- [Schema](https://effect.website/docs/v4/api/effect/Schema)
+- [Native tsgo tooling](https://www.npmjs.com/package/@effect/tsgo)
+- [Effect Oxlint setup](https://github.com/Effect-TS/tsgo/blob/main/docs/README.md)

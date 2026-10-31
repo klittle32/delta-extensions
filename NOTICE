@@ -6,8 +6,12 @@ ac769c681ba7a95ec7347b591f0858857a1a9e80 (version 0.1.32).
 https://github.com/zed-industries/delta-claude/tree/ac769c681ba7a95ec7347b591f0858857a1a9e80
 Sources: hooks/register.tsx (dedicated menu routing), hooks/setup/commands.ts,
 hooks/cli/thread-commands.ts, hooks/cli/command-reader.ts (transport invariants),
-hooks/recording/outbox.ts, hooks/recording/delivery.ts and CLI fixture definitions.
+hooks/recording/outbox.ts, hooks/recording/delivery.ts, hooks/recording/content.ts,
+hooks/recording/title.ts and CLI fixture definitions.
 Modifications: new Effect 4 Schema definitions, pure command parser, explicit
 unsupported subset failures, receipt correlation tests, and scoped Effect subprocess/JSONL transport.
+Durable outbox modifications: new local journal/checkpoint format, scoped exclusive
+writer, strict text/tool/title schemas, immutable staged bytes, durable individual
+receipts and reload pauses. Filesystem/crash fixtures are original tests.
 Process fixtures are original, provider-free test programs. No host code included.
 Public contract: https://delta.dev/docs/cli/build-a-plugin (CLI contract 8).

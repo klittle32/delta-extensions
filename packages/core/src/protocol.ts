@@ -1,5 +1,13 @@
 // Contract 8 subset, adapted from pinned Delta source. See NOTICE and docs/core.md.
 import { Effect, Schema } from "effect";
+import { RecordBatch } from "./records.js";
+
+export {
+  DeltaRecord,
+  RecordBatch,
+  RecordUpdate,
+  StateRecord,
+} from "./records.js";
 
 const open = <F extends Schema.Struct.Fields>(fields: F) =>
   Schema.StructWithRest(Schema.Struct(fields), [
@@ -115,36 +123,6 @@ export const ProducerTurnEvent = open({
   type: Schema.Literal("producer.turn"),
   ...Turn.schema.fields,
 });
-/** This slice supports only running/idle state updates, not arbitrary transcript updates. */
-export const StateRecord = open({
-  schemaVersion: Schema.Literal(1),
-  sequence: positive,
-  turnSequence: Schema.optionalKey(positive),
-  update: open({
-    sessionUpdate: Schema.Literal("state_update"),
-    state: Schema.Literals(["running", "idle"]),
-  }),
-}).check(
-  Schema.makeFilter((v) =>
-    Object.keys(v).every((key) =>
-      ["schemaVersion", "sequence", "turnSequence", "update"].includes(key),
-    ),
-  ),
-  Schema.makeFilter(
-    (v) =>
-      v.turnSequence === undefined ||
-      v.turnSequence < v.sequence ||
-      (v.turnSequence === v.sequence && v.update.state === "running"),
-  ),
-);
-export const RecordBatch = Schema.Array(StateRecord).check(
-  Schema.isMinLength(1),
-  Schema.makeFilter((rows) =>
-    rows.every(
-      (row, i) => i === 0 || row.sequence === (rows[i - 1]?.sequence ?? 0) + 1,
-    ),
-  ),
-);
 export const Receipt = open({
   operation: Schema.Literal("appended"),
   thread_id: nonempty,

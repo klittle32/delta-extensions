@@ -36,23 +36,23 @@ export const runJson = <S extends Schema.Constraint>(
                 stderr: process.stderr(),
               }),
           });
-          const payload = yield* Schema.decodeUnknownEffect(
+          const payload = yield* Schema.decodeEffect(
             Schema.fromJsonString(Schema.Unknown),
           )(text);
           // A valid structured CLI failure wins over its nonzero exit code.
           return yield* decodeResponse(schema)(payload);
         });
         const value = yield* decode.pipe(
-          Effect.catch((error) =>
-            code !== 0 && error._tag !== "DeltaFailure"
-              ? Effect.fail(
-                  new TransportError({
-                    kind: "exit",
-                    exitCode: code,
-                    stderr: process.stderr(),
-                  }),
-                )
-              : Effect.fail(error),
+          Effect.catchIf(
+            (error) => code !== 0 && error._tag !== "DeltaFailure",
+            () =>
+              Effect.fail(
+                new TransportError({
+                  kind: "exit",
+                  exitCode: code,
+                  stderr: process.stderr(),
+                }),
+              ),
           ),
         );
         if (code !== 0)
@@ -88,7 +88,7 @@ export const watchJsonLines = <S extends Schema.Constraint>(
             process.stderr,
           ).pipe(
             Stream.mapEffect((line) =>
-              Schema.decodeUnknownEffect(Schema.fromJsonString(Schema.Unknown))(
+              Schema.decodeEffect(Schema.fromJsonString(Schema.Unknown))(
                 line,
               ).pipe(Effect.flatMap(decodeResponse(schema))),
             ),

@@ -4,5 +4,8 @@
   "js/ts.tsdk.promptToUseWorkspaceVersion": true,
   "js/ts.tsdk.additionalLocations": ["./node_modules/typescript/bin"],
   "editor.defaultFormatter": "biomejs.biome",
-  "editor.formatOnSave": true
+  "editor.formatOnSave": true,
+  "oxc.typeAware": true,
+  "oxc.enable.oxfmt": false,
+  "oxc.path.oxlint": "${workspaceFolder}/node_modules/.bin/oxlint"
 }

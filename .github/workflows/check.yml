@@ -14,4 +14,5 @@ jobs:
         with:
           bun-version: 1.4.4
       - run: bun install --frozen-lockfile
-      - run: bun run check
+      - name: Native TS, Effect Oxlint, formatting, tests and build
+        run: bun run check

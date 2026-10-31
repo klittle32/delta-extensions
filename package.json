@@ -9,17 +9,20 @@
   "scripts": {
     "test": "vitest run",
     "typecheck": "effect-tsgo tsc --noEmit",
-    "effect-check": "effect-tsgo diagnostics --project tsconfig.json --strict",
+    "effect-check": "bun run lint",
     "build": "effect-tsgo tsc -p tsconfig.build.json",
-    "lint": "biome check .",
-    "format": "biome check --write .",
-    "check": "bun run typecheck && bun run effect-check && bun run lint && bun run test && bun run build",
-    "prepare": "effect-tsgo patch --typescript --no-oxlint"
+    "lint": "effect-tsgo oxlint --type-aware .",
+    "format": "biome format --write .",
+    "check": "bun run typecheck && bun run lint && bun run format:check && bun run test && bun run build",
+    "prepare": "effect-tsgo patch --typescript --oxlint",
+    "format:check": "biome format ."
   },
   "devDependencies": {
     "@biomejs/biome": "2.6.4",
     "@effect/tsgo": "0.63.0",
     "@effect/vitest": "4.1.1",
+    "oxlint": "1.90.0",
+    "oxlint-tsgolint": "7.0.2005",
     "typescript": "7.0.2",
     "vitest": "5.0.5"
   }

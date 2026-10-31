@@ -2,12 +2,12 @@
 
 This is a deterministic foundation, not an installable mod or parity certification.
 The core now includes scoped subprocess JSON/JSONL transport, alongside pure command
-parsing and Effect Schema validation. Transport requires the injected Effect
+parsing, Effect Schema validation and durable producer storage. Transport requires the injected Effect
 `ChildProcessSpawner` service; the separate `@delta-extensions/core/node` entry
 exports `nodeProcessLayer` backed by exact-pinned `@effect/platform-node` 4.1.1.
 Core creates no runtime. Tests run real Node fixture processes and inject spawner
 layers and TestClock. There is still no authentication, upload, installation,
-Delta binary invocation, persistence, host adapter or workflow implementation.
+Delta binary invocation, submission, host adapter or workflow implementation.
 
 Command parsing retains dedicated-command context: bare `/delta-org` returns a
 `team-menu` intent, and bare `/delta-join` returns a join prompt intent (null
@@ -22,11 +22,9 @@ noninteractive fallback still belong to the future adapter.
 - `Status` validates full contract-8 status: access, upload, worktree inspection,
   producer identity/frontier/turn and optional actor ID. Inspection unavailability
   remains data; it does not become an empty successful inventory.
-- `StateRecord` / `RecordBatch` cover record `schemaVersion: 1` **state updates
-  only**, running or idle, positive safe sequences, original turn associations,
+- `StateRecord`, `DeltaRecord` / `RecordBatch` cover record `schemaVersion: 1`: running/idle, text user/assistant/thought messages, tool input/result (text and add/modify git diffs), and titles. They enforce positive safe sequences, original turn associations,
   and nonempty consecutive batches. Unscoped history is permitted. A turn may
-  name its own sequence only for its running start. This is validation, not
-  sequence allocation or durable outbox handling.
+  name its own sequence only for its running start. Allocation and persistence are provided separately by the outbox below.
 - `Receipt` and `correlateReceipts` validate each append receipt, including thread,
   sequence, frontier, version, disposition, and exact nullable original turn.
   A valid shorter receipt list returns the pending suffix; fenced turn sequences
@@ -112,19 +110,78 @@ termination guarantee has been proved. The official Node backend can take its
 granted termination grace plus additional platform cleanup time; a deadline starts
 cleanup, it does not promise an instantaneous wall-clock return.
 
+## Durable local producer outbox
+
+`openOutbox({ root, identity, mode })` is scoped; `ProducerOutbox` / `outboxLayer`
+provide the same operations as an injected service. Supply Effect FileSystem,
+Path and Digest services; core creates no runtime. `root` must be an explicit
+absolute private host-storage directory with an existing parent, never an implicit
+checkout directory. `mode: "create"` requires a new directory; `"reopen"` requires
+intact existing state. Identity binds source, externalId, threadId and scopeId. Its serialized UTF-8
+JSON is limited to 32 KiB, checked before creating storage, reserving room for the
+checkpoint envelope within its 64 KiB read limit.
+
+- `stage(id, { update, turnSequence? })` allocates consecutive sequences starting
+  at one, persists immutable JSON+LF bytes, then returns those exact replay bytes.
+  Same ID and same bytes is idempotent; conflicting bytes fail. Late output keeps
+  its original turnSequence. MAX_SAFE_INTEGER is reserved as the final frontier.
+- `replay` is an Effect returning the unacknowledged suffix; `snapshot` exposes
+  identity, next sequence, pending sequences, fences and persisted pause state.
+- `applyReceipts(receipts)` commits each validated receipt separately. A later
+  invalid receipt does not undo the acknowledged prefix or delete the suffix.
+  Errors retain applied-count/fence information; replayed receipts are idempotent.
+  Receipt object key order is immaterial; array order and scalar values remain significant.
+- `pauseForReload(error)` persists a structured `reload_required` pause. Stage and
+  replay then fail paused, including after reopen. No automatic retry or reset.
+
+Local journal format 1 is separate from CLI contract 8 and record schemaVersion 1.
+Each numbered immutable transaction chains SHA256 to its predecessor. Commit writes
+and syncs the transaction, syncs the directory, writes/syncs `head.next`, renames it
+over `head.json`, then syncs the directory before returning. Root/lock directories
+use mode 0700; files use 0600, exclusive creation and no-follow opens. Reads reject
+nonprivate files, malformed/noncanonical state, broken chains and unexpected files.
+Record bytes are limited to 16 MiB; transaction reads to 64 MiB. All transactions,
+including acknowledged records, remain retained: no compaction/GC or total-store
+quota is implemented. Revalidation on every operation trades speed for a small,
+conservative persistence owner; this is not a high-volume database.
+
+An exclusive `.writer` directory rejects concurrent local writers. A semaphore
+serializes operations and teardown waits for an active commit. Device/inode checks
+reject replaced locks. Real validation/read failures conservatively poison the handle and retain the
+lock, even without a write. Interrupt-only cancellation during a guard read or
+while queued does not poison ownership. Commits remain uninterruptible until
+publication completes or fails ambiguously; interrupted callers must replay to
+discover committed records. Ambiguous writes poison the handle and retain the lock;
+crashes leave the lock intact. Missing/unreadable state never creates a replacement
+producer or reuses sequences. There is deliberately no automatic stale-lock reclaim
+or recovery API: an owner must inspect preserved files and decide recovery explicitly.
+A lock-release finalizer failure becomes a defect via `orDie`, rather than a
+normal typed operation failure. This is cooperative local POSIX ownership, not protection from malicious writers,
+NFS/distributed coordination or proof of power-loss behavior.
+
+Tests use real temporary files, injected write/rename/read faults and two actual
+Bun-child SIGKILL cases (completed stage and prepared checkpoint before rename).
+Test-only explicit lock removal demonstrates intact reopen versus refusal of an
+ambiguous journal; production code never does this. No raw Node persistence syscall
+or hidden runtime was needed. No submission/network operation is provided.
+
 ## Verification record
 
-The foundation's **48-test** GitHub Actions Core checks succeeded at
+Foundation CI passed **48 tests** at
 [`5f8de2579be95bf7b95ab7c0a651018b01ab347b`](https://github.com/klittle32/delta-extensions/commit/5f8de2579be95bf7b95ab7c0a651018b01ab347b),
-[run 41245700377](https://github.com/klittle32/delta-extensions/actions/runs/41245700377),
-as confirmed by the parent watcher. That run does **not** verify this process leaf.
-Local process verification adds 26 transport/lifecycle tests to the 48 foundation
-tests: **74 total across five suites**. The initial process suite failed for a
-missing implementation module. Later red runs exposed three failures (acquisition
-deadlines and lost valid frame prefixes), then one failure for missing nonzero-exit
-diagnostics; each was corrected before the passing checks. Native checks also
-caught use of a source-only Schema export; implementation now uses the published
-`Schema.fromJsonString(Schema.Unknown)` API and compiles against declarations.
+[run 41245700377](https://github.com/klittle32/delta-extensions/actions/runs/41245700377).
+Process CI passed **74 tests** at `3bdc8c0`,
+[run 41247550048](https://github.com/klittle32/delta-extensions/actions/runs/41247550048).
+The parent watcher confirmed both. Neither covers this uncommitted outbox/tooling
+leaf. Local outbox verification adds 47 tests: **121 across eight suites**.
+Red runs exposed missing implementation, empty-lock removal, teardown racing an
+active commit, cached replay hiding corruption, and lost fencing after a later bad
+receipt; each was fixed before green. Review regressions additionally exposed
+interrupt-only guard poisoning (stage/replay/snapshot), oversized identity acceptance
+and receipt object-order conflicts. Tests now cover queued and in-commit cancellation,
+reuse/close/reopen, and continued fail-closed behavior for real read failures. Tooling verification also used a temporary
+floating-Effect probe: Oxlint failed with two Effect-rule errors; the probe was
+removed. See [Effect tooling](effect.md) for exact versions and visible warnings.
 
 ## Provenance and licensing
 
@@ -140,11 +197,12 @@ Pinned reference: [delta-claude ac769c6](https://github.com/zed-industries/delta
 | Command grammar and email splitting | `hooks/register.tsx` (dedicated menu routing), `hooks/setup/commands.ts`, `hooks/setup/setup.ts` |
 | Contract/status/receipt/error/producer-turn schemas | `hooks/cli/thread-commands.ts` |
 | Transport invariants | `hooks/cli/command-reader.ts`; new Effect implementation and original Node fixtures |
-| Record envelope and turn constraints | `hooks/recording/outbox.ts`, `hooks/recording/delivery.ts` |
+| Record envelope, turn constraints and durable outbox semantics | `hooks/recording/outbox.ts`, `hooks/recording/delivery.ts` |
+| Text/tool/title update subset | `hooks/recording/content.ts`, `hooks/recording/title.ts` |
 | Six unchanged JSON test fixtures | `hooks/testing/fixtures/cli/thread-status.*.json`, `thread-append.*.json` |
 
 Fixtures are deterministic upstream contract examples, not evidence of installed
 CLI execution or live collaboration. Only Linux x64, Bun 1.4.4 and Node 22.23.4
 have been exercised here; no host/backend/UI, Windows, macOS, real Delta, or
 multi-client behavior has been verified. CI defines the same provider-free checks;
-only the foundation CI run identified above has been observed.
+the two checkpoint CI runs identified above have been observed; neither covers this leaf.

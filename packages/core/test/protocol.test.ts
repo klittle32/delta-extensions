@@ -51,7 +51,7 @@ it.effect("negotiates CLI contract 8 independently of record v1", () =>
 it.effect("keeps extension fields at every decoded boundary", () =>
   Effect.gen(function* () {
     expect(
-      yield* Schema.decodeUnknownEffect(Contract)({
+      yield* Schema.decodeEffect(Contract)({
         operation: "contract",
         min: 8,
         max: 8,
@@ -165,7 +165,7 @@ it.effect(
 it.effect("validates producer turn event subset", () =>
   Effect.gen(function* () {
     expect(
-      yield* Schema.decodeUnknownEffect(ProducerTurnEvent)({
+      yield* Schema.decodeEffect(ProducerTurnEvent)({
         type: "producer.turn",
         sequence: 1,
         status: "superseded",
@@ -173,7 +173,7 @@ it.effect("validates producer turn event subset", () =>
     ).toHaveProperty("status", "superseded");
     expect(
       (yield* Effect.flip(
-        Schema.decodeUnknownEffect(ProducerTurnEvent)({
+        Schema.decodeEffect(ProducerTurnEvent)({
           type: "producer.turn",
           sequence: 0,
           status: "running",

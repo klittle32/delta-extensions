@@ -9,7 +9,7 @@ the shared engine and harness adapters.
 **Core foundation built; host prerequisites in development. No installable mod exists yet.**
 
 `packages/core` now provides command parsing and a tested, bounded contract-8
-Schema subset, plus scoped subprocess JSON/JSONL transport. See [the exact built boundary and provenance](docs/core.md).
+Schema subset, scoped subprocess JSON/JSONL transport, and a durable local producer outbox. See [the exact built boundary and provenance](docs/core.md).
 This is not full parity certification.
 
 The target is full functional parity with Zed's
@@ -26,10 +26,11 @@ approval.
 
 The tested source checkpoint is published on
 [`delta/mod-host-apis`](https://github.com/klittle32/letta-code/tree/delta/mod-host-apis)
-at [`5b5350f1a`](https://github.com/klittle32/letta-code/commit/5b5350f1aad683438b9fc62fd1812a602a720ce1).
+at [`870ee9951`](https://github.com/klittle32/letta-code/commit/870ee99514387e6d3226871e921a8d7b1d200cae).
 It includes native questions, TUI interruption lifecycle, inactive conversation
-creation, and passive-context primitives. Trusted activation and passive-context
-delivery are not wired yet. See the [checkpoint](docs/host-implementation.md) for
+creation, trusted fresh-session activation, and captured passive-context
+primitives. Passive-context delivery is not wired yet. See the
+[checkpoint](docs/host-implementation.md) for
 verification and remaining work; this is not a complete host integration.
 
 Reference baseline: upstream **0.1.32**, commit
@@ -40,10 +41,10 @@ reviewed October 31, 2026. Delta CLI contract **8**, introduced in Delta **0.22.
 
 ```text
 packages/
-  core/          # Built: command parsing, bounded schemas, scoped JSON/JSONL transport
+  core/          # Built: command parsing, bounded schemas, JSON/JSONL transport, durable outbox
 ```
 
-Persistence, Delta workflows and the Letta adapter are not built. Later adapters may target Pi, Grok,
+Delta submission, recovery workflows and the Letta adapter are not built. Later adapters may target Pi, Grok,
 Codex, Prime Agent, and other harnesses. Add them only when their implementation
 starts; do not create empty adapters or speculative framework layers.
 
@@ -56,12 +57,14 @@ bun install --frozen-lockfile
 bun run check
 ```
 
-`check` runs strict native TypeScript, Effect semantic diagnostics, Biome, Vitest,
+`check` runs strict native TypeScript, Effect type-aware Oxlint, Biome formatting, Vitest,
 and declaration/JavaScript build into `packages/core/dist`. Individual commands:
 `bun run typecheck`, `bun run effect-check`, `bun run lint`, `bun run test`,
-`bun run build`; `bun run format` applies Biome fixes. Setup patches the native
-TypeScript binary for editor diagnostics; command checks use the direct
-`effect-tsgo` wrapper. No Delta account or provider credentials are needed.
+`bun run build`; `bun run format` applies formatting. `effect-check` aliases lint.
+Setup patches native TypeScript and Oxlint; command checks use the documented
+`effect-tsgo` wrappers. Oxlint owns lint/Effect diagnostics; the recommended preset
+currently reports 113 upstream unstable-API warnings and no errors. LSP diagnostics
+are disabled to avoid duplicates; native editor/compiler integration remains. No Delta account or provider credentials are needed.
 
 ## Command compatibility
 

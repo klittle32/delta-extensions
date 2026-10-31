@@ -34,7 +34,10 @@ Never present fake-CLI tests as live collaboration verification.
 
 The core foundation uses Bun 1.4.4 with `bun.lock`. Install with
 `bun install --frozen-lockfile`, then run `bun run check` (native TS, Effect
-semantic diagnostics, Biome, Vitest, build). `bun run format` applies fixes.
+Oxlint lint/Effect semantic diagnostics, Biome formatting, Vitest, build).
+Oxlint uses the shipped Effect recommended preset; Biome is format-only. Keep
+native tsgo editor/compiler integration and avoid duplicate diagnostic passes.
+`bun run format` applies formatting fixes.
 See `docs/core.md` for built protocol coverage; do not imply host or live Delta
 acceptance from these deterministic tests. Add no placeholder adapter.
 
