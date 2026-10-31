@@ -63,7 +63,7 @@ and declaration/JavaScript build into `packages/core/dist`. Individual commands:
 `bun run build`; `bun run format` applies formatting. `effect-check` aliases lint.
 Setup patches native TypeScript and Oxlint; command checks use the documented
 `effect-tsgo` wrappers. Oxlint owns lint/Effect diagnostics; the recommended preset
-currently reports 113 upstream unstable-API warnings and no errors. LSP diagnostics
+keeps upstream unstable-API warnings visible. LSP diagnostics
 are disabled to avoid duplicates; native editor/compiler integration remains. No Delta account or provider credentials are needed.
 
 ## Command compatibility

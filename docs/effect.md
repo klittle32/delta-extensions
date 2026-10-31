@@ -46,7 +46,7 @@ and the installed 0.63.0 README/matrix. The resulting configuration uses:
 No Oxlint rule is suppressed. Real findings were corrected: typed decoders for
 known encoded values, selective `catchIf`, concrete test error channels, and
 Effect-valued `replay`/`snapshot` service members instead of lazy zero-argument
-functions. The remaining **113 warnings**, all `effecttsgo/unstable-api-usage`,
+functions. The remaining **122 warnings**, all `effecttsgo/unstable-api-usage`,
 are intentionally visible: the required exact-pinned Effect process, filesystem,
 path, digest and Node services, and @effect/vitest APIs carry upstream unstable
 annotations. These warnings are not zero diagnostics and do not certify API
@@ -105,7 +105,8 @@ process singleton; a future host adapter owns its runtime and abort bridge.
   state. `File.sync`, directory sync, exclusive opens, atomic rename and scoped
   finalizers use public APIs; no raw Node persistence syscall was needed.
 - JSON schemas distinguish CLI contract 8, record schemaVersion 1 and local
-  journal format 1. Text/tool/title validation is a coherent declared subset,
+  journal format 1. All content blocks emitted by the pinned recorder are validated within the
+  supported message/tool/title/state envelope subset,
   not permissive acceptance of unknown controls or complete protocol support.
 - No retries of non-idempotent writes or automatic recovery. A local writer lock
   fails closed after crashes, real validation/read failures or ambiguous persistence.
@@ -127,8 +128,12 @@ Foundation CI: **48 tests**, commit `5f8de2579be95bf7b95ab7c0a651018b01ab347b`,
 [run 41245700377](https://github.com/klittle32/delta-extensions/actions/runs/41245700377).
 Process checkpoint CI: **74 tests**, commit `3bdc8c0`,
 [run 41247550048](https://github.com/klittle32/delta-extensions/actions/runs/41247550048).
-Both were confirmed by the parent watcher. Neither verifies this uncommitted
-outbox/tooling leaf. Current local results are reported with delivery.
+Outbox/tooling checkpoint CI: commit `c46899830de034aa0d16f7f1974eb1477cc4b516`,
+[run 41250090689](https://github.com/klittle32/delta-extensions/actions/runs/41250090689).
+All three runs were confirmed by the parent watcher. Parent outbox verification
+also covered 121 local tests/build/frozen install and independent blocker recheck.
+This subsequent content leaf adds seven tests (128 total); current local results
+are reported with delivery. No remote CI for this leaf is claimed.
 
 The process and outbox tests use real local files/processes and injected services
 for failure/deadline boundaries. They are not live Delta or Letta acceptance.

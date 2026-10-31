@@ -15,3 +15,10 @@ writer, strict text/tool/title schemas, immutable staged bytes, durable individu
 receipts and reload pauses. Filesystem/crash fixtures are original tests.
 Process fixtures are original, provider-free test programs. No host code included.
 Public contract: https://delta.dev/docs/cli/build-a-plugin (CLI contract 8).
+
+Content schema leaf: packages/core/test/fixtures/record-content.json adapts emitted
+ACP content examples from hooks/recording/content.test.ts (MCP payload test) and
+hooks/recording/content.ts:60–110,322 at the pinned commit above. Synthetic
+annotations/extension fields and schema validation tests are local modifications.
+Content validation/base64 checks are adapted from the same AGPL-3.0-only source;
+no source files or payloads are read from local protected paths.

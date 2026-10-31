@@ -22,7 +22,7 @@ noninteractive fallback still belong to the future adapter.
 - `Status` validates full contract-8 status: access, upload, worktree inspection,
   producer identity/frontier/turn and optional actor ID. Inspection unavailability
   remains data; it does not become an empty successful inventory.
-- `StateRecord`, `DeltaRecord` / `RecordBatch` cover record `schemaVersion: 1`: running/idle, text user/assistant/thought messages, tool input/result (text and add/modify git diffs), and titles. They enforce positive safe sequences, original turn associations,
+- `StateRecord`, `DeltaRecord` / `RecordBatch` cover record `schemaVersion: 1`: running/idle, user/assistant/thought messages, tool input/result (all emitted content blocks and add/modify git diffs), and titles. They enforce positive safe sequences, original turn associations,
   and nonempty consecutive batches. Unscoped history is permitted. A turn may
   name its own sequence only for its running start. Allocation and persistence are provided separately by the outbox below.
 - `Receipt` and `correlateReceipts` validate each append receipt, including thread,
@@ -48,6 +48,39 @@ pending-record boundary: unsupported control records cannot masquerade as update
 Unknown discriminants and malformed known semantics fail; they are not dropped,
 coerced to success, or presented as complete protocol support. These are decoded
 object schemas, not canonical JSONL storage validation or a duplicate-key parser.
+
+## Emitted content blocks
+
+Message and wrapped tool-result content validate every block variant emitted by
+pinned `hooks/recording/content.ts`: text, base64 image, base64 audio,
+`resource` with text or base64 blob, and `resource_link`. Document inputs are
+already converted upstream to resources/links; raw `document`, image `source`,
+and other input-only shapes are deliberately not additional wire variants here.
+This leaf validates emitted records; it does not implement host capture/conversion.
+
+Payload strings, URI strings, JSON extension fields and metadata are preserved.
+Canonical padded base64 (including pad-bit validation) follows the pinned emitter;
+bytes are not decoded/reencoded. Empty payloads/strings remain accepted where the
+emitter accepts them. URI/MIME strings are opaque, not normalized or fetched.
+Known optional annotation, icon, size and metadata structures are validated;
+nullable optional fields emitted by upstream remain accepted. Missing resource
+payloads, malformed base64, invalid audience/priority/size/icon types and unknown
+block discriminants fail visibly without a lossy text fallback. This does not
+read local files, inspect media bytes or verify URI access/MIME truth.
+
+The adapted fixture links directly to
+[the pinned MCP content test](https://github.com/zed-industries/delta-claude/blob/ac769c681ba7a95ec7347b591f0858857a1a9e80/hooks/recording/content.test.ts#L115)
+and [emission/validation](https://github.com/zed-industries/delta-claude/blob/ac769c681ba7a95ec7347b591f0858857a1a9e80/hooks/recording/content.ts#L60).
+Local additions exercise annotations, icons, null optionals and opaque extensions.
+All four existing message/tool envelope kinds are schema-tested; real temporary
+storage tests prove exact bytes survive stage/replay/reopen. An oversized image
+record is refused before sequence allocation. The 16 MiB serialized JSONL record
+limit matches pinned `outboxChunks`; base64 overhead counts toward it. No limit
+was raised. Existing local JSON serialization also rejects nesting deeper than
+128 levels; the pinned emitter has no corresponding explicit depth cap, so very
+deep metadata can still be rejected locally. This pre-existing semantic bound
+remains deliberate and visible. Local total-store retention/read limits described
+below remain unchanged.
 
 ## Process transport
 
@@ -172,8 +205,12 @@ Foundation CI passed **48 tests** at
 [run 41245700377](https://github.com/klittle32/delta-extensions/actions/runs/41245700377).
 Process CI passed **74 tests** at `3bdc8c0`,
 [run 41247550048](https://github.com/klittle32/delta-extensions/actions/runs/41247550048).
-The parent watcher confirmed both. Neither covers this uncommitted outbox/tooling
-leaf. Local outbox verification adds 47 tests: **121 across eight suites**.
+Outbox/tooling CI passed at `c46899830de034aa0d16f7f1974eb1477cc4b516`,
+[run 41250090689](https://github.com/klittle32/delta-extensions/actions/runs/41250090689).
+The parent watcher confirmed all three runs. The outbox checkpoint also passed
+121 local tests/build/frozen install and independent blocker recheck.
+Those runs do not cover this subsequent content leaf. Outbox verification adds
+47 tests: **121 across eight suites**.
 Red runs exposed missing implementation, empty-lock removal, teardown racing an
 active commit, cached replay hiding corruption, and lost fencing after a later bad
 receipt; each was fixed before green. Review regressions additionally exposed
@@ -182,6 +219,11 @@ and receipt object-order conflicts. Tests now cover queued and in-commit cancell
 reuse/close/reopen, and continued fail-closed behavior for real read failures. Tooling verification also used a temporary
 floating-Effect probe: Oxlint failed with two Effect-rule errors; the probe was
 removed. See [Effect tooling](effect.md) for exact versions and visible warnings.
+
+Content leaf TDD: six expected initial failures (four envelope variants, durable
+replay and malformed optional fields), then seven content tests green. Current
+local suite: **128 tests across nine suites**. Frozen installation and full checks
+are run with generated output present; this is not live Delta/host acceptance.
 
 ## Provenance and licensing
 
@@ -198,7 +240,7 @@ Pinned reference: [delta-claude ac769c6](https://github.com/zed-industries/delta
 | Contract/status/receipt/error/producer-turn schemas | `hooks/cli/thread-commands.ts` |
 | Transport invariants | `hooks/cli/command-reader.ts`; new Effect implementation and original Node fixtures |
 | Record envelope, turn constraints and durable outbox semantics | `hooks/recording/outbox.ts`, `hooks/recording/delivery.ts` |
-| Text/tool/title update subset | `hooks/recording/content.ts`, `hooks/recording/title.ts` |
+| Emitted content blocks, tool/title updates and adapted record-content fixture | `hooks/recording/content.ts`, `hooks/recording/title.ts` |
 | Six unchanged JSON test fixtures | `hooks/testing/fixtures/cli/thread-status.*.json`, `thread-append.*.json` |
 
 Fixtures are deterministic upstream contract examples, not evidence of installed

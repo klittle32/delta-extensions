@@ -1,6 +1,7 @@
 // AGPL-3.0-only. Adapted contract subset: pinned recording/content.ts, title.ts,
 // delivery.ts and outbox.ts. See NOTICE and docs/core.md.
 import { Schema } from "effect";
+import { ContentBlock } from "./content.js";
 
 const open = <F extends Schema.Struct.Fields>(fields: F) =>
   Schema.StructWithRest(Schema.Struct(fields), [
@@ -15,7 +16,6 @@ export const StateUpdate = open({
   sessionUpdate: Schema.Literal("state_update"),
   state: Schema.Literals(["running", "idle"]),
 });
-const Text = open({ type: Schema.Literal("text"), text: Schema.String });
 const MessageUpdate = open({
   sessionUpdate: Schema.Literals([
     "user_message",
@@ -23,7 +23,7 @@ const MessageUpdate = open({
     "agent_thought",
   ]),
   messageId: id,
-  content: Schema.Array(Text),
+  content: Schema.Array(ContentBlock),
 });
 const Diff = open({
   type: Schema.Literal("diff"),
@@ -44,7 +44,7 @@ const ToolUpdate = open({
   content: Schema.optionalKey(
     Schema.Array(
       Schema.Union([
-        open({ type: Schema.Literal("content"), content: Text }),
+        open({ type: Schema.Literal("content"), content: ContentBlock }),
         Diff,
       ]),
     ),

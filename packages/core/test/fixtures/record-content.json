@@ -1,0 +1,10 @@
+[
+  {"type":"text","text":"changed"},
+  {"type":"image","data":"AA==","mimeType":"image/png","annotations":{"audience":["user"],"priority":0.5},"_meta":{"opaque":{"bytes":"AQ=="}}},
+  {"type":"image","data":"AQ==","mimeType":"image/jpeg"},
+  {"type":"resource_link","name":"https://example.org/a.png","uri":"https://example.org/a.png"},
+  {"type":"audio","data":"Ag==","mimeType":"audio/wav"},
+  {"type":"resource","resource":{"uri":"file:///doc","text":"body","mimeType":"text/plain","_meta":{"origin":"mcp"}}},
+  {"type":"resource","resource":{"uri":"file:///blob","blob":"Aw=="}},
+  {"type":"resource_link","name":"doc","uri":"https://example.org/doc","title":"Guide","description":"details","size":7,"mimeType":"text/plain","icons":[{"src":"https://example.org/icon","sizes":["32x32"],"theme":"dark"}],"_meta":{"origin":"mcp"}}
+]
