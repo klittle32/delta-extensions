@@ -8,9 +8,14 @@
     ".": {
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
+    },
+    "./node": {
+      "types": "./dist/node.d.ts",
+      "import": "./dist/node.js"
     }
   },
   "dependencies": {
+    "@effect/platform-node": "4.1.1",
     "effect": "4.1.1"
   }
 }

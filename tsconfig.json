@@ -20,5 +20,6 @@
     ],
     "resolveJsonModule": true
   },
-  "include": ["packages/**/*.ts"]
+  "include": ["packages/**/*.ts"],
+  "exclude": ["**/dist", "node_modules"]
 }

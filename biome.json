@@ -4,6 +4,7 @@
     "ignoreUnknown": true,
     "includes": [
       "**/*.ts",
+      "**/*.mjs",
       "**/*.json",
       "!**/fixtures",
       "!!**/dist",

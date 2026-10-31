@@ -5,8 +5,9 @@ Copyright Zed Industries, AGPL-3.0-only, pinned commit
 ac769c681ba7a95ec7347b591f0858857a1a9e80 (version 0.1.32).
 https://github.com/zed-industries/delta-claude/tree/ac769c681ba7a95ec7347b591f0858857a1a9e80
 Sources: hooks/register.tsx (dedicated menu routing), hooks/setup/commands.ts,
-hooks/cli/thread-commands.ts,
+hooks/cli/thread-commands.ts, hooks/cli/command-reader.ts (transport invariants),
 hooks/recording/outbox.ts, hooks/recording/delivery.ts and CLI fixture definitions.
 Modifications: new Effect 4 Schema definitions, pure command parser, explicit
-unsupported subset failures, and receipt correlation tests. No host code included.
+unsupported subset failures, receipt correlation tests, and scoped Effect subprocess/JSONL transport.
+Process fixtures are original, provider-free test programs. No host code included.
 Public contract: https://delta.dev/docs/cli/build-a-plugin (CLI contract 8).

@@ -2,7 +2,8 @@
 
 Research checked live npm metadata and published source on **October 31, 2026**.
 The core foundation now compiles against these published versions; see the
-workspace manifests and `bun.lock`. Platform packages remain uninstalled.
+workspace manifests and `bun.lock`. The process leaf installs the Node platform
+package; the Bun platform package remains uninstalled.
 
 ## Verified versions
 
@@ -92,7 +93,8 @@ practices” without executable checks and a focused architectural review.
 
 Verified npm metadata before installation: Effect and @effect/vitest 4.1.1,
 TypeScript 7.0.2, @effect/tsgo 0.63.0, Vitest 5.0.5, Biome 2.6.4. Bun is 1.4.4;
-Node tested is 22.23.4. No platform package is needed for pure core validation.
+Node tested is 22.23.4. The process leaf exact-pins `@effect/platform-node` 4.1.1;
+its shared backend resolves to 4.1.1 in `bun.lock`.
 Published source confirmed `StructWithRest`, `optionalKey`, `check`/`makeFilter`,
 `decodeUnknownEffect` and `Schema.TaggedError` signatures; compiled tests exercise them.
 
@@ -111,7 +113,7 @@ A temporary floating-Effect probe produced two semantic errors and nonzero exit;
 it was removed. Diagnostics check every source/test file. The exact-pinned
 @effect/vitest API carries an upstream unstable annotation; its diagnostic is
 retained at message severity, while other warnings and all errors fail checks.
-Suggestions remain advisory. A passing semantic check currently reports **0 errors,
+Suggestions remain advisory. The foundation semantic check reported **0 errors,
 0 warnings, and 17 informational messages/suggestions**, including the upstream
 unstable test API notices and typed-decoder suggestions; this is not a claim of
 zero diagnostics. No JS compiler-patching plugin is installed.
@@ -120,6 +122,40 @@ has not been acceptance tested. CI uses no provider credentials.
 
 Initial red run: two missing-module suites. A later regression test produced one
 failure (44 passed) for accepted unsupported control keys; validation was corrected.
-Final counts and full command results are reported with delivery. This slice owns
-no runtime or resources, so it introduces no service/layer, TestClock, or shutdown
-scaffold solely to demonstrate an API. See [core boundaries](core.md).
+Final counts and full command results are reported with delivery. The original foundation owned
+no runtime/resources. The process leaf now exercises scoped process ownership,
+platform layers and TestClock, as described below. See [core boundaries](core.md).
+
+
+## Scoped process leaf
+
+Verified published metadata before installing `@effect/platform-node@4.1.1`.
+Inspected installed public `effect/process/ChildProcess`, `ChildProcessSpawner`,
+`Stream`, `Effect`, and `@effect/platform-node` declarations and implementations.
+The process APIs and platform wiring remain upstream **unstable**, exact-pinned,
+and isolated in `process-session.ts` / `node.ts`; their informational annotations
+remain visible alongside the test API messages. No new runtime is created.
+
+`runJson` and `watchJsonLines` require `ChildProcessSpawner`. The separate Node
+entry exports its actual service layer using Node filesystem/path dependencies.
+`ChildProcess.make(executable, args, options)` explicitly sets cwd, shell false,
+env inheritance, pipe outputs, ignored stdin, and termination escalation. Spawn
+uses the provider's scoped acquisition/release rather than custom Node process
+management. Both pipes drain concurrently with aggregate byte limits and bounded
+stderr retention. Natural completion checks the handle's exit result; timeout,
+cancellation and early stop await resource release through Scope.
+
+Tests use actual Node child programs, an observed/decorated real spawner layer,
+and TestClock-driven deadlines. Additional injected blocked-spawner tests prove
+deadlines cover acquisition. No fake-CLI test is labeled live Delta verification.
+The installed public declarations do not export the source-internal
+`UnknownFromJsonString`; compiled code uses `fromJsonString(Schema.Unknown)`.
+Generated `dist` declarations are excluded from project semantic checks as well
+as Biome to keep repeated checks focused on source/tests.
+
+Process-leaf checks retain informational process/test unstable-API messages and
+suggestions; **zero errors/warnings does not mean zero diagnostics**. The process-leaf semantic check reports **0 errors, 0 warnings,
+and 64 informational messages/suggestions** across 14 source/test files. Foundation remote CI evidence is scoped to
+its 48 tests at [run 41245700377](https://github.com/klittle32/delta-extensions/actions/runs/41245700377);
+this uncommitted process leaf has not run remotely. No OS termination guarantee
+beyond the locally tested Linux direct-child cases is claimed.
