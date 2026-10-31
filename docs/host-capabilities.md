@@ -88,8 +88,17 @@ outboxes, JSONL streams, retries and process ownership.
 
 ## Decision boundary
 
-The recommended route preserves full parity: add minimal generic, tested public
-host capabilities, then build the Letta adapter against them. Host modifications
-are outside the originally requested monorepo/mod scope and await owner approval.
-No host patch or upstream issue/PR has been created. A reduced mod-only milestone
-also needs explicit approval and must not be called full parity.
+The owner approved **Host APIs first** on October 31, 2026: add minimal generic,
+tested public host capabilities, then build the Letta adapter against them.
+Development is isolated in a personal Letta Code fork. No upstream submission or
+deployment is authorized, and no upstream issue/PR has been created. A reduced
+mod-only milestone still needs explicit approval and must not be called full
+parity.
+
+The host work must distinguish local durability from Cloud persistence. A
+host-local passive-context record can avoid inference and be delivered with the
+next explicit input, but it is not an immediate Cloud transcript append. Ambiguous
+request acceptance must remain explicit rather than silently discarding context
+or blindly replaying it. Native Desktop dialogs/session activation also require
+client/transport support; adding a TUI callback alone does not establish Desktop
+parity.

@@ -6,13 +6,19 @@ the shared engine and harness adapters.
 
 ## Status
 
-**Requirements and host-feasibility research. No installable mod exists yet.**
+**Host prerequisites in development. No installable mod exists yet.**
 
 The target is full functional parity with Zed's
 [Delta for Claude Code](https://github.com/zed-industries/delta-claude), not just
 matching command names. Its collaboration protocol requires host capabilities
 that are not all exposed by the current Letta mod API. Implementation must not
 silently downgrade those requirements or bypass the host through private APIs.
+
+The project owner approved **host APIs first** on October 31, 2026: develop
+minimal generic public Letta APIs, then the mod. Host work is staged in the
+[personal Letta Code fork](https://github.com/klittle32/letta-code), separately
+from this monorepo. Upstream submission and deployment are not authorized by that
+approval. The fork's existence does not mean the changes are published or ready.
 
 Reference baseline: upstream **0.1.32**, commit
 [`ac769c681ba7a95ec7347b591f0858857a1a9e80`](https://github.com/zed-industries/delta-claude/tree/ac769c681ba7a95ec7347b591f0858857a1a9e80),
@@ -44,6 +50,7 @@ Letta mod, not the Claude plugin. Matching names alone is not feature parity.
 
 - [Parity requirements and acceptance gates](docs/requirements.md)
 - [Letta host-capability findings](docs/host-capabilities.md)
+- [Host implementation checkpoint](docs/host-implementation.md)
 - [Effect 4.1 implementation and tooling direction](docs/effect.md)
 - [Contributor instructions](AGENTS.md)
 

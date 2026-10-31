@@ -101,9 +101,10 @@ host API, not just prose documentation. The inspected mod UI has no native
 ask/select input contract; the exported question helper provides receipt parsers
 and notification serialization, not an interactive mod API.
 
-**Owner decision required before scope expansion:** keep full parity and pursue
-the minimal generic Letta host APIs, or explicitly approve a reduced milestone.
-No reduced milestone is currently authorized.
+**Owner decision, October 31, 2026:** approved **Host APIs first**. Preserve full
+parity and develop the minimal generic Letta APIs before completing the adapter.
+Upstream submission requires separate approval. No reduced milestone is
+authorized, and no complete host API implementation is claimed yet.
 
 ## Acceptance gates
 
