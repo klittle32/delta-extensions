@@ -6,7 +6,11 @@ the shared engine and harness adapters.
 
 ## Status
 
-**Host prerequisites in development. No installable mod exists yet.**
+**Core foundation built; host prerequisites in development. No installable mod exists yet.**
+
+`packages/core` now provides command parsing and a tested, bounded contract-8
+Schema subset. See [the exact built boundary and provenance](docs/core.md).
+This is not full parity certification.
 
 The target is full functional parity with Zed's
 [Delta for Claude Code](https://github.com/zed-industries/delta-claude), not just
@@ -32,17 +36,32 @@ Reference baseline: upstream **0.1.32**, commit
 [`ac769c681ba7a95ec7347b591f0858857a1a9e80`](https://github.com/zed-industries/delta-claude/tree/ac769c681ba7a95ec7347b591f0858857a1a9e80),
 reviewed October 31, 2026. Delta CLI contract **8**, introduced in Delta **0.22.0**.
 
-## Planned layout
+## Workspace layout
 
 ```text
 packages/
-  core/          # Effect schemas, durable protocol state, processes and workflows
-  letta/         # Letta mod lifecycle, commands, context and UI adaptation
+  core/          # Built: command parsing and a bounded Effect Schema contract subset
 ```
 
-These packages are planned, not implemented. Later adapters may target Pi, Grok,
+Persistence/process workflows and the Letta adapter are not built. Later adapters may target Pi, Grok,
 Codex, Prime Agent, and other harnesses. Add them only when their implementation
 starts; do not create empty adapters or speculative framework layers.
+
+## Local development
+
+Use Bun **1.4.4** and Node **22.23.4** (Effect requires Node 22.19+).
+
+```sh
+bun install --frozen-lockfile
+bun run check
+```
+
+`check` runs strict native TypeScript, Effect semantic diagnostics, Biome, Vitest,
+and declaration/JavaScript build into `packages/core/dist`. Individual commands:
+`bun run typecheck`, `bun run effect-check`, `bun run lint`, `bun run test`,
+`bun run build`; `bun run format` applies Biome fixes. Setup patches the native
+TypeScript binary for editor diagnostics; command checks use the direct
+`effect-tsgo` wrapper. No Delta account or provider credentials are needed.
 
 ## Command compatibility
 
@@ -67,5 +86,6 @@ Letta mod, not the Claude plugin. Matching names alone is not feature parity.
 This is an independent integration project, not an official Zed or Letta release.
 The reference plugin is **AGPL-3.0-only**, copyright Zed Industries. Any adapted
 source must retain its license and attribution, identify modifications, and be
-distributed under compatible terms. No upstream implementation has been copied
-into this repository at this stage.
+distributed under compatible terms. This foundation adapts protocol definitions and command behavior and includes six
+attributed upstream fixtures. The root [LICENSE](LICENSE) and [NOTICE](NOTICE)
+cover this work under AGPL-3.0-only.

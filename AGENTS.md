@@ -32,9 +32,11 @@ smallest passing behavior, then run relevant suites and static checks. Keep
 deterministic protocol tests separate from real Delta and real-host acceptance.
 Never present fake-CLI tests as live collaboration verification.
 
-No package manager, dependency lock, implementation, build, or test commands have
-been established yet. Add reproducible setup and check commands with the first
-implementation slice; do not document commands that do not exist.
+The core foundation uses Bun 1.4.4 with `bun.lock`. Install with
+`bun install --frozen-lockfile`, then run `bun run check` (native TS, Effect
+semantic diagnostics, Biome, Vitest, build). `bun run format` applies fixes.
+See `docs/core.md` for built protocol coverage; do not imply host or live Delta
+acceptance from these deterministic tests. Add no placeholder adapter.
 
 ## Safety and disclosure
 

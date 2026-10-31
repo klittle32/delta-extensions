@@ -1,0 +1,26 @@
+{
+  "name": "delta-extensions",
+  "private": true,
+  "license": "AGPL-3.0-only",
+  "packageManager": "bun@1.4.4",
+  "workspaces": [
+    "packages/*"
+  ],
+  "scripts": {
+    "test": "vitest run",
+    "typecheck": "effect-tsgo tsc --noEmit",
+    "effect-check": "effect-tsgo diagnostics --project tsconfig.json --strict",
+    "build": "effect-tsgo tsc -p tsconfig.build.json",
+    "lint": "biome check .",
+    "format": "biome check --write .",
+    "check": "bun run typecheck && bun run effect-check && bun run lint && bun run test && bun run build",
+    "prepare": "effect-tsgo patch --typescript --no-oxlint"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "2.6.4",
+    "@effect/tsgo": "0.63.0",
+    "@effect/vitest": "4.1.1",
+    "typescript": "7.0.2",
+    "vitest": "5.0.5"
+  }
+}
