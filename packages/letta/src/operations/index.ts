@@ -996,6 +996,28 @@ if cli=$(sh "$work/install.sh" --locate-cli); then printf '%s\\n' "$cli"; else s
           );
         return latest;
       });
+    const isManagedEntry = Effect.gen(function* () {
+      if (!options.moduleUrl) return false;
+      const module = yield* Effect.try(() => new URL(options.moduleUrl!));
+      if (module.protocol !== "file:") return false;
+      const entry = yield* pathService.fromFileUrl(module);
+      const root =
+        options.managedModsRoot ??
+        pathService.join(
+          process.env.LETTA_CONFIG_DIR ?? pathService.join(homedir(), ".letta"),
+          "mods",
+        );
+      const relative = pathService.relative(
+        pathService.join(root, "packages"),
+        entry,
+      );
+      return (
+        pathService.isAbsolute(root) &&
+        !pathService.isAbsolute(relative) &&
+        relative !== ".." &&
+        !relative.startsWith(`..${pathService.sep}`)
+      );
+    }).pipe(Effect.catch(() => Effect.succeed(false)));
     const pluginUpdate = (session: Session, action = "") =>
       Effect.gen(function* () {
         if (action === "notifications on" || action === "notifications off") {
@@ -1026,7 +1048,7 @@ if cli=$(sh "$work/install.sh" --locate-cli); then printf '%s\\n' "$cli"; else s
           return "Usage: /delta-plugin-update [check | notifications on | notifications off]";
         const manual =
           "This Delta mod is a local/source installation from an unpublished package. Update the source checkout, rebuild the bundle, reinstall it using Letta mods, and restart Letta Code. No registry release is available.";
-        if (!options.moduleUrl) return manual;
+        if (!options.moduleUrl || !(yield* isManagedEntry)) return manual;
         yield* check(session);
         const list = () =>
           Effect.gen(function* () {
@@ -1347,29 +1369,7 @@ if cli=$(sh "$work/install.sh" --locate-cli); then printf '%s\\n' "$cli"; else s
           if (options.moduleUrl) {
             const plugin = yield* Effect.result(
               Effect.gen(function* () {
-                const module = yield* Effect.try(
-                  () => new URL(options.moduleUrl!),
-                );
-                if (module.protocol !== "file:") return;
-                const entry = yield* pathService.fromFileUrl(module);
-                const root =
-                  options.managedModsRoot ??
-                  pathService.join(
-                    process.env.LETTA_CONFIG_DIR ??
-                      pathService.join(homedir(), ".letta"),
-                    "mods",
-                  );
-                const relative = pathService.relative(
-                  pathService.join(root, "packages"),
-                  entry,
-                );
-                if (
-                  !pathService.isAbsolute(root) ||
-                  pathService.isAbsolute(relative) ||
-                  relative === ".." ||
-                  relative.startsWith(`..${pathService.sep}`)
-                )
-                  return;
+                if (!(yield* isManagedEntry)) return;
                 const listing = yield* run({
                   executable: "letta",
                   args: ["mods", "list", "--agent", session.agentId],

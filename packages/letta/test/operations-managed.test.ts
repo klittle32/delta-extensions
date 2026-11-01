@@ -78,6 +78,33 @@ const execute = (action: string, choice: string, pin?: string) =>
       }),
     ).pipe(Effect.provide(layer)),
   );
+
+it("offers manual updates for loose bundles without requiring a Letta executable", async () => {
+  await Effect.runPromise(
+    Effect.scoped(
+      Effect.gen(function* () {
+        for (const moduleUrl of [
+          "file:///memory/mods/delta.mjs",
+          "file:///repo/packages/letta/dist/index.mjs",
+        ]) {
+          const ops = yield* makeOperations({
+            moduleUrl,
+            managedModsRoot: "/mods",
+            interaction: { ask: () => Effect.die("must not prompt") },
+            run: () =>
+              Effect.die("must not invoke Letta or any other executable"),
+          });
+          expect(yield* ops.pluginUpdate(session)).toContain(
+            "local/source installation",
+          );
+          expect(yield* ops.pluginUpdate(session, "check")).toContain(
+            "local/source installation",
+          );
+        }
+      }),
+    ).pipe(Effect.provide(layer)),
+  );
+});
 it("checks a real managed source read-only without pretending pin history is available", async () => {
   const result = await execute("check", "cancel");
   expect(result.result).toContain("latest published version: 2.0.0");
