@@ -171,7 +171,9 @@ checkpoint; the reported gates were run locally.
 
 1. Complete durable human-visible context projection and scope restoration.
 2. Establish sufficient main/child observation and recording coverage. Do not
-   infer lossless coverage from parent tool receipts alone.
+   infer lossless coverage from parent tool receipts alone. The source-only
+   [recording boundary findings](recording-boundaries.md) identify the safe-view
+   and noncreating history-read prerequisites; they are not implemented yet.
 3. Repeat focused tests, full static gates, built-Node validation, independent
    integration review, and relevant native acceptance for subsequent slices.
 4. Complete the Effect 4.1 engine and build the Letta adapter against the resulting public APIs,
