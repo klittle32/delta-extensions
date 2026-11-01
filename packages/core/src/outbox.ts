@@ -105,7 +105,7 @@ export const openOutbox = (options: OutboxOptions) =>
           txn.event.receipt.thread_id !== identity.threadId
         )
           return yield* new OutboxError({ kind: "corrupt" });
-        yield* applyEvent(state, txn.event);
+        yield* applyEvent(state, txn.event, identity);
       }
     const guard = () =>
       Effect.gen(function* () {
@@ -142,7 +142,7 @@ export const openOutbox = (options: OutboxOptions) =>
               }),
             ),
           );
-          yield* applyEvent(state, event);
+          yield* applyEvent(state, event, identity);
         }),
       );
     return makeOperations(state, identity, exclusive, commit);

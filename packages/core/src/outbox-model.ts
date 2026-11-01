@@ -1,5 +1,6 @@
 import { Effect, Schema } from "effect";
 import { ErrorDetail, Receipt } from "./protocol.js";
+import { checkProducerFrontier } from "./producer-frontier.js";
 import { DeltaRecord } from "./records.js";
 export class OutboxError extends Schema.TaggedError<
   OutboxError,
@@ -39,10 +40,18 @@ export const Head = Schema.Struct({
   transaction: integer,
   digest: id,
 });
+const frontierSequence = integer.check(Schema.isGreaterThan(0));
 export const Event = Schema.Union([
   Schema.Struct({ type: Schema.Literal("stage"), id, line: Schema.String }),
   Schema.Struct({ type: Schema.Literal("receipt"), receipt: Receipt }),
   Schema.Struct({ type: Schema.Literal("pause"), error: ErrorDetail }),
+  Schema.Struct({
+    type: Schema.Literal("resume"),
+    identity: Identity,
+    acknowledgedBefore: frontierSequence,
+    nextSequence: frontierSequence,
+    reportedNextSequence: frontierSequence,
+  }),
 ]);
 export const Transaction = Schema.Struct({
   format: Schema.Literal(1),
@@ -86,7 +95,11 @@ export const decodeLine = (line: string) =>
       return yield* new OutboxError({ kind: "corrupt" });
     return yield* Schema.decodeUnknownEffect(DeltaRecord)(value);
   }).pipe(Effect.mapError(() => new OutboxError({ kind: "corrupt" })));
-export const applyEvent = (state: State, event: typeof Event.Type) =>
+export const applyEvent = (
+  state: State,
+  event: typeof Event.Type,
+  identity: Identity,
+) =>
   Effect.gen(function* () {
     if (event.type === "stage") {
       const record = yield* decodeLine(event.line);
@@ -116,6 +129,37 @@ export const applyEvent = (state: State, event: typeof Event.Type) =>
       )
         return yield* new OutboxError({ kind: "corrupt" });
       state.receipts.set(row.sequence, ack);
+    } else if (event.type === "resume") {
+      if (
+        !state.paused ||
+        event.identity.source !== identity.source ||
+        event.identity.externalId !== identity.externalId ||
+        event.identity.threadId !== identity.threadId ||
+        event.identity.scopeId !== identity.scopeId
+      )
+        return yield* new OutboxError({ kind: "corrupt" });
+      const facts = yield* checkProducerFrontier(
+        {
+          identity,
+          nextSequence: state.nextSequence,
+          pending: pending(state).map((row) => row.sequence),
+        },
+        {
+          thread_id: event.identity.threadId,
+          producer: {
+            source: event.identity.source,
+            external_id: event.identity.externalId,
+            next_sequence: event.reportedNextSequence,
+            turn: null,
+          },
+        },
+      ).pipe(Effect.mapError(() => new OutboxError({ kind: "corrupt" })));
+      if (
+        facts.acknowledgedBefore !== event.acknowledgedBefore ||
+        facts.nextSequence !== event.nextSequence
+      )
+        return yield* new OutboxError({ kind: "corrupt" });
+      state.paused = null;
     } else {
       if (event.error.code !== "reload_required")
         return yield* new OutboxError({ kind: "corrupt" });

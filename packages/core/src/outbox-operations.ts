@@ -216,6 +216,30 @@ export const makeOperations = (
         ),
       ),
     );
+  /** Only user-approved fork/discard recovery may call this transition. A valid
+   * observation alone is never an automatic resume or receipt authority. */
+  const resumeAfterReload = (observation: unknown) =>
+    exclusive(
+      Effect.gen(function* () {
+        const facts = yield* checkProducerFrontier(
+          {
+            identity,
+            nextSequence: state.nextSequence,
+            pending: pending(state).map((row) => row.sequence),
+          },
+          observation,
+        );
+        if (state.paused !== null)
+          yield* commit({
+            type: "resume",
+            identity: { ...identity },
+            acknowledgedBefore: facts.acknowledgedBefore,
+            nextSequence: facts.nextSequence,
+            reportedNextSequence: facts.reportedNextSequence,
+          });
+        return facts;
+      }),
+    );
   return {
     stage,
     replay,
@@ -223,5 +247,6 @@ export const makeOperations = (
     applyReceipts,
     pauseForReload,
     checkFrontier,
+    resumeAfterReload,
   };
 };
