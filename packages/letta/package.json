@@ -20,7 +20,11 @@
       "lettaCodeCli": "0.34.36"
     },
     "capabilities": [
-      "commands"
+      "commands",
+      "events.lifecycle",
+      "events.turns",
+      "events.tools",
+      "ui.panels"
     ]
   }
 }

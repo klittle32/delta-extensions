@@ -43,6 +43,13 @@ it("bundles and activates from outside the source tree without host or workspace
         "utf8",
       ),
     );
+    const wsManifest =
+      createRequire(platformManifest).resolve("ws/package.json");
+    const ws = JSON.parse(await readFile(wsManifest, "utf8"));
+    expect(notices).toContain(`ws@${ws.version}`);
+    expect(notices).toContain(
+      await readFile(join(dirname(wsManifest), "LICENSE"), "utf8"),
+    );
     await copyFile(join(directory, "index.mjs"), join(directory, "mod.mjs"));
     await writeFile(
       join(directory, "accept.mjs"),
@@ -78,6 +85,12 @@ it("declares a native stock Letta package manifest for the bundled mod", async (
     manifestVersion: 1,
     mods: ["dist/index.mjs"],
     engines: { lettaCodeCli: "0.34.36" },
-    capabilities: ["commands"],
+    capabilities: [
+      "commands",
+      "events.lifecycle",
+      "events.turns",
+      "events.tools",
+      "ui.panels",
+    ],
   });
 });

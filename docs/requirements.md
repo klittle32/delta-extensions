@@ -37,7 +37,10 @@ that is not a restriction on where a Letta agent's identity is stored.
 
 ## Required behavior
 
-Every row below is **not implemented** in this repository.
+These are the acceptance requirements, not a blanket claim of verified parity.
+The mod implements the command, setup, sharing/handoff, recording, receiving and
+recovery paths against synthetic CLI fixtures. Native-host and live-Delta proof
+remain separate; the stock-API limitations below still apply.
 
 | Area | Required parity |
 | --- | --- |
@@ -89,9 +92,15 @@ child recording is impossible. See the [host findings](host-capabilities.md).
 2. **Fresh session and workspace handoff:** create/activate a fresh conversation,
    apply the mounted directory to the host and its tools, preserve trust/approval,
    and resume safely. Forking a handle or changing a child process cwd is not this.
+   The mod provides an explicit stock-CLI launch command with a scoped single-use
+   token instead of claiming automatic activation.
 3. **Passive transcript/context delivery:** append collaborators' activity without
    invoking inference, with separate human/model visibility and durable receipt
    semantics. `sendMessageStream` starts a run; it is not passive append.
+   The mod retains a local context queue, prepends permitted remote content to the
+   next explicit turn, and acknowledges it after an observed normal completion.
+   Human-only thoughts use native UI notifications. This is not durable Cloud
+   transcript insertion or a host-acceptance receipt API.
 4. **Complete recording and child observation:** safely observe permitted messages,
    thought/tool content, child lifecycle, and late output with correct attribution.
    End-of-turn history polling is not proof of complete live capture.

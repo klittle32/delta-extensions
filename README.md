@@ -6,16 +6,18 @@ the shared engine and harness adapters.
 
 ## Status
 
-**A stock Letta Code mod is in development. Organization commands are implemented.**
+**Development mod for stock Letta Code 0.34.36.** All seven commands are wired:
+sharing, fresh-session join handoff, repository setup, organization management,
+Delta updates, and adapter updates. Recording uses durable outboxes; receiving
+uses scoped watches and passive delivery on the next explicit model turn.
 
-The bundled mod supports `/delta-org list`, `current`, `switch <ID>`,
-`invite <email>…`, and `manage`, also available through `/delta org …`.
-`manage` returns the dashboard link. Sharing, joining, setup, updates, and the
-remaining collaboration workflows are not implemented yet.
+Interactive choices use a local browser form. The native TUI remains responsive
+while an action runs; its scoped notifications report completion or failure.
+No host fork or private runtime API is used.
 
 `packages/core` now provides command parsing and a tested, bounded contract-8
 Schema subset, scoped subprocess JSON/JSONL transport, a durable local producer outbox, and one-attempt append delivery. See [the exact built boundary and provenance](docs/core.md).
-This is not full parity certification.
+This is not full parity certification or live Delta acceptance.
 
 The target is full functional parity with Zed's
 [Delta for Claude Code](https://github.com/zed-industries/delta-claude), not just
@@ -39,7 +41,7 @@ packages/
   letta/         # Stock Letta Code mod
 ```
 
-End-to-end Delta workflows and recovery UI are not built. Later adapters may target Pi, Grok,
+Later adapters may target Pi, Grok,
 Codex, Prime Agent, and other harnesses. Add them only when their implementation
 starts; do not create empty adapters or speculative framework layers.
 
@@ -62,9 +64,42 @@ keeps upstream unstable-API warnings visible. LSP diagnostics
 are disabled to avoid duplicates; native editor/compiler integration remains. No Delta account or provider credentials are needed.
 
 To try the development mod, copy `packages/letta/dist/index.mjs` into your
-Letta config directory's `mods/` folder as `delta.mjs`, then run `/reload`.
-Install the official Delta CLI separately; the mod does not install it or log in
-automatically. Tests use synthetic CLI processes, not a live Delta account.
+Letta config directory's `mods/` folder as `delta.mjs`, or into an agent's MemFS
+`mods/` folder. Keep the generated license/notice files with the distribution,
+then run `/reload`.
+
+```text
+/delta-share                 # disclose uploads and choose an audience
+/delta-share you@example.com
+/delta-join <shared-link>     # prepare a fresh-session handoff
+/delta-setup                 # configure this repository
+/delta                      # menu, including restore and offline recovery
+```
+
+Use a Git checkout. Sharing includes nonignored staged, unstaged and untracked
+files and permitted conversation content. Protected Letta memory, system/policy
+injections and skill bodies are excluded. Missing CLI installation or sign-in
+requires explicit interaction; merely loading the mod never installs software
+or opens a login page. Setup offers can appear once per unconfigured repository.
+
+Join preserves the old conversation and checkout. Run the generated command to
+open the mounted checkout in a **fresh conversation with the same agent**; its
+short-lived, single-use token adopts the prepared mount. Stock mods cannot
+activate a new conversation or change the host workspace themselves.
+
+Use normal quit or `/reload` for cleanup. Abrupt process termination can leave
+an outbox writer lock; do not delete a lock while another writer may be alive.
+Pending records are never discarded to make a retry appear successful.
+
+The loose MemFS development bundle is not a registry release. Its plugin-update
+command explains source updates rather than overwriting agent memory. Managed
+package updates use the stock Letta CLI with explicit approval.
+
+Linux stock-TUI and browser checks use synthetic Delta processes, not a live
+account. macOS, native Windows, live two-client collaboration, and complete
+child-session recording remain unverified. Native active-run cancellation and
+durable host transcript insertion remain public-API gaps; admission guards do
+not stop tools that are already running. See the requirements below.
 
 ## Command compatibility
 

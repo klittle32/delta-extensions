@@ -36,6 +36,7 @@ const manifests = [
   createRequire(platformManifest).resolve(
     "@effect/platform-node-shared/package.json",
   ),
+  createRequire(platformManifest).resolve("ws/package.json"),
 ];
 const notices = await Promise.all(
   manifests.map(async (manifestPath) => {

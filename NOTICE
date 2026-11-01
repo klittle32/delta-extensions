@@ -73,3 +73,11 @@ Letta organization slice: CLI discovery and organization command behavior adapte
 from pinned hooks/cli/cli.ts, hooks/cli/delta-cli.ts, hooks/setup/commands.ts and
 hooks/setup/setup.ts. Public stock mod registration, Effect lifecycle ownership,
 bounded text subprocess capture, standalone bundle and local fixtures are new.
+
+Letta collaboration workflows: setup/authentication/install/update behavior,
+audience selection, checkout/join handoff, capture/snapshot filtering, passive
+watch rendering and fork/discard recovery adapt hooks/cli, hooks/setup,
+hooks/sharing, hooks/recording, hooks/watch and hooks/plugin-update at the pinned
+commit above. The Effect services, stock-mod adapter, loopback browser forms,
+durable intent/resume implementation and synthetic acceptance harnesses are
+local modifications. No Letta host implementation is incorporated.

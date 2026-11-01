@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
+import { Deferred, Effect } from "effect";
 import activate, {
+  createMod,
   type CommandRegistration,
   type ModApi,
 } from "../src/index.js";
@@ -33,7 +35,9 @@ describe("stock mod facade", () => {
     });
     expect(
       await h.commands.get("delta")!.run({ args: "share", cwd: "/tmp" }),
-    ).toMatchObject({ output: expect.stringContaining("not implemented") });
+    ).toMatchObject({
+      output: expect.stringContaining("requires stock turn and tool"),
+    });
     expect(dispose()).toBeUndefined();
     expect(h.commands.size).toBe(0);
     expect(await run({ args: "list", cwd: "/tmp" })).toMatchObject({
@@ -96,6 +100,50 @@ it("offers org as the root argument prefix only", () => {
       "list|current|switch <ID>|invite <email>…|manage",
     );
   } finally {
+    dispose();
+  }
+});
+
+it("returns handled before a browser question is answered (stock commands time out at 30 seconds)", async () => {
+  const h = host();
+  const notices: string[] = [];
+  const answer = Effect.runSync(Deferred.make<string | undefined>());
+  const api: ModApi = {
+    ...h.api,
+    capabilities: {
+      commands: true,
+      events: { tools: true, turns: true, lifecycle: true },
+      ui: { panels: true },
+    },
+    events: { on: () => () => {} },
+    ui: {
+      notify: (value) => {
+        notices.push(value);
+      },
+      openPanel: () => ({ update: () => {}, close: () => {} }),
+    },
+  };
+  const dispose = createMod({
+    interaction: { ask: () => Deferred.await(answer) },
+  })(api);
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    const result = await Promise.race([
+      h.commands.get("delta")!.run({
+        args: "",
+        cwd: "/tmp",
+        agent: { id: "agent-test" },
+        conversation: { id: "conv-test", getHistory: async () => [] },
+      }),
+      new Promise((resolve) => {
+        timer = setTimeout(() => resolve({ type: "timed-out" }), 1000);
+      }),
+    ]);
+    expect(result).toEqual({ type: "handled" });
+    Effect.runSync(Deferred.succeed(answer, undefined));
+    await expect.poll(() => notices).toContain("Delta menu closed.");
+  } finally {
+    clearTimeout(timer);
     dispose();
   }
 });

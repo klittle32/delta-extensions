@@ -62,9 +62,10 @@ module validates/parses receipts and serializes response notifications; it does
 not open a question from a mod. Prose docs describe broader interaction than this
 inspected API exposes.
 
-Needed for a native interactive port: scoped questions/menus with cancellation
-and correct conversation ownership. Alternate text-command UI would be an
-explicit adaptation, not proof that the existing wizard controls are available.
+The mod uses a scoped loopback browser form for choices and text input. Native
+TUI commands return `handled` immediately because stock command callbacks time
+out after 30 seconds; the session owns the ongoing Effect and its form. This is
+an explicit UI adaptation, not an invented native question API.
 
 ## Qualified coverage gaps
 
@@ -90,17 +91,9 @@ outboxes, JSONL streams, retries and process ownership.
 
 ## Decision boundary
 
-The owner approved **Host APIs first** on October 31, 2026: add minimal generic,
-tested public host capabilities, then build the Letta adapter against them.
-Development is isolated in a personal Letta Code fork. No upstream submission or
-deployment is authorized, and no upstream issue/PR has been created. A reduced
-mod-only milestone still needs explicit approval and must not be called full
-parity.
-
-The host work must distinguish local durability from Cloud persistence. A
-host-local passive-context record can avoid inference and be delivered with the
-next explicit input, but it is not an immediate Cloud transcript append. Ambiguous
-request acceptance must remain explicit rather than silently discarding context
-or blindly replaying it. Native Desktop dialogs/session activation also require
-client/transport support; adding a TUI callback alone does not establish Desktop
-parity.
+The later owner instruction supersedes the earlier host-development route:
+**stock public mod APIs only, no Letta Code fork or host changes**. The adapter
+uses a fresh-session CLI handoff, local passive-context queue, scoped browser
+interaction and native TUI notifications. These do not establish automatic
+workspace activation, immediate Cloud transcript persistence, complete child
+observation or active-run cancellation. Keep those distinctions explicit.

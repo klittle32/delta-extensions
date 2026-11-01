@@ -41,8 +41,12 @@ async function cli(body: string) {
   await writeFile(file, `#!${process.execPath}\n${body}\n`);
   await chmod(file, 0o755);
 }
-const run = (args: string, id = "delta-org", cwd = directory) =>
-  commands.get(id)!.run({ args, cwd });
+const run = async (args: string, id = "delta-org", cwd = directory) => {
+  const result = await commands.get(id)!.run({ args, cwd });
+  if (result.type !== "output")
+    throw new Error("Organization commands must return their bounded output.");
+  return result;
+};
 it("has no eager discovery and reports missing CLI without side effects", async () => {
   expect((await run("list")).output).toContain("CLI is missing");
 });

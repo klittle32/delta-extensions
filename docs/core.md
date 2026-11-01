@@ -1,19 +1,19 @@
 # Built core boundary
 
-This is a deterministic foundation, not an installable mod or parity certification.
+This describes the host-independent library, not full parity certification.
 The core now includes scoped subprocess JSON/JSONL transport, alongside pure command
 parsing, Effect Schema validation, durable producer storage, one-attempt append delivery
 and readonly watch decoding/projection. Transport requires the injected Effect
 `ChildProcessSpawner` service; the separate `@delta-extensions/core/node` entry
 exports `nodeProcessLayer` backed by exact-pinned `@effect/platform-node` 4.1.1.
 Core creates no runtime. Tests run real Node fixture processes and inject spawner
-layers and TestClock. There is still no authentication, upload, installation,
-live Delta binary invocation, host adapter or end-to-end workflow implementation.
+layers and TestClock. Authentication, installation and end-to-end workflows live
+in `packages/letta`, not in this library. Fixtures are not live Delta acceptance.
 
 Command parsing retains dedicated-command context: bare `/delta-org` returns a
 `team-menu` intent, and bare `/delta-join` returns a join prompt intent (null
 locator). `/delta org` and `/delta join` return usage. Interactive execution and
-noninteractive fallback still belong to the future adapter.
+noninteractive fallback belong to the Letta adapter.
 
 ## Protocol coverage
 
@@ -37,7 +37,7 @@ noninteractive fallback still belong to the future adapter.
   owner below explicitly validates and persists receipts for its selected batch.
 - `WatchEvent` covers all pinned contract-8 watch data variants (including
   `ProducerTurnEvent`), with explicit known/future-event wrappers. See the
-  readonly watch and stateful projection boundaries below; no host watch workflow is built.
+  readonly watch and stateful projection boundaries below; the adapter owns participation.
 - `decodeResponse(schema)` checks a structured `error` before success decoding.
   Invalid envelopes remain `SchemaError`; valid failures are `DeltaFailure` and
   retain code, diagnostic reason, retryability, delay and extension fields.
@@ -201,6 +201,10 @@ checkpoint envelope within its 64 KiB read limit.
   Receipt object key order is immaterial; array order and scalar values remain significant.
 - `pauseForReload(error)` persists a structured `reload_required` pause. Stage and
   replay then fail paused, including after reopen. No automatic retry or reset.
+- `resumeAfterReload(observation)` is an explicit recovery transition used only
+  after the operator's confirmed fork/discard action. It validates the producer
+  frontier under the writer lock and journals resume before clearing the pause;
+  records, receipts, original turns and sequence allocation are unchanged.
 
 Local journal format 1 is separate from CLI contract 8 and record schemaVersion 1.
 Each numbered immutable transaction chains SHA256 to its predecessor. Commit writes
