@@ -9,6 +9,7 @@ import {
   bindingPath,
 } from "../src/collaboration/index.js";
 import type { Session } from "../src/session.js";
+import { openOutbox } from "../../core/src/outbox.js";
 const executable = fileURLToPath(
   new URL("./collaboration-fixture.mjs", import.meta.url),
 );
@@ -123,6 +124,13 @@ it.live(
           .filter((row) => row.update.sessionUpdate === "session_info_update")
           .map((row) => row.update.title),
       ).toEqual(["Initial public title", "Updated public title"]);
+      // Delta rejects session-scoped title records that carry a turnSequence,
+      // even when the title is captured at turn end.
+      expect(
+        rows
+          .filter((row) => row.update.sessionUpdate === "session_info_update")
+          .every((row) => row.turnSequence === undefined),
+      ).toBe(true);
       expect(rows.filter((row) => row.update.messageId === "u1")).toHaveLength(
         1,
       );
@@ -132,6 +140,122 @@ it.live(
       ).toBe(running.sequence);
       yield* service.close(session);
       expect(notifications.length).toBe(2);
+    }).pipe(Effect.provide(platform)),
+);
+it.live(
+  "restores legacy immutable title and reasoning intents without duplicating history",
+  () =>
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const cwd = yield* fs.makeTempDirectoryScoped();
+      yield* fs.makeDirectory(`${cwd}/.git`);
+      const session: Session = {
+        agentId: "a",
+        conversationId: "c",
+        cwd,
+        interactive: true,
+        title: "Old title",
+        signal: yield* Effect.abortSignal,
+        notify: () => {},
+        getHistory: async () => [
+          {
+            id: "old",
+            message_type: "reasoning_message",
+            reasoning: "old thought",
+          },
+          {
+            id: "old",
+            message_type: "assistant_message",
+            content: "new answer",
+          },
+        ],
+      };
+      const service = yield* makeCollaboration({
+        executable,
+        stateDirectory: `${cwd}/state`,
+        ready: () => Effect.void,
+        organization: () => Effect.succeed("org"),
+        interaction: { ask: () => Effect.succeed("private") },
+      });
+      yield* service.share({
+        ...session,
+        title: null,
+        getHistory: async () => [],
+      });
+      yield* service.turnStart(session);
+      yield* service.turnEnd({
+        ...session,
+        title: null,
+        getHistory: async () => [],
+      });
+      yield* service.close(session);
+      const file = bindingPath(`${cwd}/state`, session);
+      const binding = JSON.parse(yield* fs.readFileString(file));
+      const title = {
+        id: "legacy-title",
+        update: { sessionUpdate: "session_info_update", title: "Old title" },
+        turnSequence: 1,
+      };
+      const thought = {
+        id: "old",
+        update: {
+          sessionUpdate: "agent_thought",
+          messageId: "old",
+          content: [{ type: "text", text: "old thought" }],
+        },
+        turnSequence: 1,
+      };
+      const answer = {
+        id: "old",
+        update: {
+          sessionUpdate: "agent_message",
+          messageId: "old",
+          content: [{ type: "text", text: "new answer" }],
+        },
+        turnSequence: 1,
+      };
+      binding.snapshot.push(title, thought, answer);
+      yield* fs.writeFileString(file, JSON.stringify(binding));
+      yield* Effect.scoped(
+        Effect.gen(function* () {
+          const store = yield* openOutbox({
+            root: `${cwd}/state/${encodeURIComponent(binding.externalId)}.outbox`,
+            identity: {
+              source: "letta-code",
+              externalId: binding.externalId,
+              threadId: binding.thread,
+              scopeId: binding.owner,
+            },
+            mode: "reopen",
+          });
+          yield* store.stage(`history:${title.id}`, {
+            update: title.update,
+            turnSequence: title.turnSequence,
+          });
+          yield* store.stage(`history:${thought.id}`, {
+            update: thought.update,
+            turnSequence: thought.turnSequence,
+          });
+        }),
+      );
+      yield* service.restore(session);
+      yield* service.turnStart(session);
+      yield* service.turnEnd(session);
+      const saved = JSON.parse(yield* fs.readFileString(file));
+      expect(
+        saved.snapshot.filter(
+          (row: { update: { sessionUpdate: string } }) =>
+            row.update.sessionUpdate === "agent_thought",
+        ),
+      ).toEqual([thought]);
+      expect(
+        saved.snapshot.filter(
+          (row: { update: { sessionUpdate: string } }) =>
+            row.update.sessionUpdate === "agent_message",
+        ),
+      ).toHaveLength(1);
+      expect(saved.snapshot).toContainEqual(title);
+      yield* service.close(session);
     }).pipe(Effect.provide(platform)),
 );
 it.live(

@@ -313,7 +313,25 @@ export const makeCollaboration = (options: CollaborationOptions) =>
       binding: Binding,
     ) =>
       Effect.gen(function* () {
-        for (const input of binding.snapshot ?? []) {
+        const rows = [...(binding.snapshot ?? [])];
+        const ids = new Set(
+          rows.flatMap((value) => {
+            const parsed = Schema.decodeUnknownOption(
+              Schema.Struct({ id: Schema.String }),
+            )(value);
+            return parsed._tag === "Some" ? [parsed.value.id] : [];
+          }),
+        );
+        const counts = new Map<string, number>();
+        for (const input of rows) {
+          const parsed = Schema.decodeUnknownOption(
+            Schema.Struct({ id: Schema.String }),
+          )(input);
+          if (parsed._tag === "Some")
+            counts.set(parsed.value.id, (counts.get(parsed.value.id) ?? 0) + 1);
+        }
+        for (let index = 0; index < rows.length; index++) {
+          const input = rows[index];
           const row = yield* Schema.decodeUnknownEffect(
             Schema.Struct({
               id: Schema.String,
@@ -322,12 +340,48 @@ export const makeCollaboration = (options: CollaborationOptions) =>
             }),
           )(input);
           yield* assertExportable(s, row.update);
-          yield* store.stage(`history:${row.id}`, {
+          const body = {
             update: row.update,
             ...(row.turnSequence === undefined
               ? {}
               : { turnSequence: row.turnSequence }),
-          });
+          };
+          // Only resolve conflicts for the known legacy duplicate thought/answer
+          // shape. Other conflicts remain errors rather than hiding corruption.
+          const duplicate =
+            (counts.get(row.id) ?? 0) > 1 &&
+            (row.update.sessionUpdate === "agent_thought" ||
+              row.update.sessionUpdate === "agent_message") &&
+            row.update.messageId === row.id &&
+            rows.some((other) => {
+              const parsed = Schema.decodeUnknownOption(
+                Schema.Struct({ id: Schema.String, update: RecordUpdate }),
+              )(other);
+              return (
+                parsed._tag === "Some" &&
+                parsed.value.id === row.id &&
+                ((row.update.sessionUpdate === "agent_thought" &&
+                  parsed.value.update.sessionUpdate === "agent_message") ||
+                  (row.update.sessionUpdate === "agent_message" &&
+                    parsed.value.update.sessionUpdate === "agent_thought"))
+              );
+            });
+          const result = yield* Effect.result(
+            store.stage(`history:${row.id}`, body),
+          );
+          if (result._tag === "Failure") {
+            if (!duplicate || result.failure.kind !== "conflict")
+              return yield* result.failure;
+            let suffix = 1;
+            let id = `${row.id}:legacy:${suffix}`;
+            while (ids.has(id)) id = `${row.id}:legacy:${++suffix}`;
+            ids.add(id);
+            rows[index] = { ...row, id };
+            binding = { ...binding, snapshot: rows };
+            // Persist the new identity before staging, so a crash can replay it.
+            yield* save(binding);
+            yield* store.stage(`history:${id}`, body);
+          }
         }
         for (const [id, tool] of Object.entries(binding.tools ?? {})) {
           if (tool.omitted || protectedTool(tool.name, tool.input, s)) continue;
@@ -359,6 +413,7 @@ export const makeCollaboration = (options: CollaborationOptions) =>
             update: { sessionUpdate: "state_update", state: "idle" },
             turnSequence: binding.pendingIdle,
           });
+        return binding;
       });
     const titleRow = Schema.Struct({
       id: Schema.String,
@@ -383,9 +438,7 @@ export const makeCollaboration = (options: CollaborationOptions) =>
                   sessionUpdate: "session_info_update" as const,
                   title: s.title,
                 },
-                ...(state.turn === undefined
-                  ? {}
-                  : { turnSequence: state.turn }),
+                // Delta rejects a turnSequence on session-scoped title records.
               };
         if (row !== previous) {
           state.binding = {
@@ -448,7 +501,7 @@ export const makeCollaboration = (options: CollaborationOptions) =>
           const projection = yield* makeWatchProjection(binding.thread);
           const openingSnapshot = yield* store.snapshot;
           if (!openingSnapshot.paused)
-            yield* reconcileIntents(s, store, binding);
+            binding = yield* reconcileIntents(s, store, binding);
           const state: Live = {
             binding,
             session: s,
@@ -482,7 +535,7 @@ export const makeCollaboration = (options: CollaborationOptions) =>
               watchCollaboration({
                 executable: options.executable,
                 cwd: s.cwd,
-                thread: binding.thread,
+                thread: binding.thread!,
                 externalId: binding.externalId,
               }),
             )
@@ -1519,15 +1572,60 @@ export const makeCollaboration = (options: CollaborationOptions) =>
                 update.status === "failed" ? "error" : "success",
               );
           }
-          const additions = captured.filter((row) => {
-            if (state.historyIds.has(row.id)) return false;
-            const update = row.update;
-            const observed =
-              update.sessionUpdate === "tool_call_update"
-                ? state.binding.tools?.[update.toolCallId]
-                : undefined;
-            return !observed;
-          });
+          // Older snapshots used the unsuffixed message ID for thoughts. Keep
+          // those immutable identities and give a newly observed answer its own.
+          const legacyThoughts = new Set(
+            (state.binding.snapshot ?? []).flatMap((input) => {
+              const parsed = Schema.decodeUnknownOption(
+                Schema.Struct({ id: Schema.String, update: RecordUpdate }),
+              )(input);
+              if (parsed._tag === "None") return [];
+              const row = parsed.value;
+              return row.update.sessionUpdate === "agent_thought" &&
+                row.id === row.update.messageId
+                ? [row.id]
+                : [];
+            }),
+          );
+          const additions = captured
+            .map((row) => {
+              if (
+                row.update.sessionUpdate === "agent_thought" &&
+                legacyThoughts.has(row.update.messageId ?? "")
+              )
+                return { ...row, id: row.update.messageId! };
+              if (
+                row.update.sessionUpdate === "agent_message" &&
+                legacyThoughts.has(row.id)
+              )
+                return { ...row, id: `${row.id}:message` };
+              return row;
+            })
+            .filter((row) => {
+              if (state.historyIds.has(row.id)) return false;
+              const update = row.update;
+              if (
+                (update.sessionUpdate === "agent_message" ||
+                  update.sessionUpdate === "agent_thought") &&
+                (state.binding.snapshot ?? []).some((input) => {
+                  const parsed = Schema.decodeUnknownOption(
+                    Schema.Struct({ update: RecordUpdate }),
+                  )(input);
+                  return (
+                    parsed._tag === "Some" &&
+                    parsed.value.update.sessionUpdate ===
+                      update.sessionUpdate &&
+                    parsed.value.update.messageId === update.messageId
+                  );
+                })
+              )
+                return false;
+              const observed =
+                update.sessionUpdate === "tool_call_update"
+                  ? state.binding.tools?.[update.toolCallId]
+                  : undefined;
+              return !observed;
+            });
           state.binding = {
             ...state.binding,
             snapshot: [
@@ -1650,7 +1748,11 @@ export const makeCollaboration = (options: CollaborationOptions) =>
             state.store,
             yield* status(s, state.binding),
           );
-          yield* reconcileIntents(s, state.store, state.binding);
+          state.binding = yield* reconcileIntents(
+            s,
+            state.store,
+            state.binding,
+          );
           state.fenced = false;
           yield* flush(state);
           if (plan.forked)

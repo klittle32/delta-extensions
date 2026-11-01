@@ -211,7 +211,11 @@ export const snapshotUpdates = (
       if (!content.length) return [];
       update = { sessionUpdate, messageId: m.id, content };
     }
-    return Schema.is(RecordUpdate)(update) ? [{ id: m.id, update }] : [];
+    // Letta can give a step's reasoning_message and assistant_message the same
+    // id. Outbox records are keyed by row id, so the thought takes a suffix or
+    // the answer would conflict with the already staged thought.
+    const id = kind === "reasoning_message" ? `${m.id}:thought` : m.id;
+    return Schema.is(RecordUpdate)(update) ? [{ id, update }] : [];
   });
 };
 const quote = (s: string) => `'${s.replaceAll("'", "'\\''")}'`;

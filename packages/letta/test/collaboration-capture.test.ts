@@ -121,3 +121,17 @@ it("excludes known public memory directory reads and shell aliases while retaini
     ),
   ).toBe(false);
 });
+it("keeps a shared reasoning/assistant message id from colliding in the outbox", () => {
+  const rows = snapshotUpdates([
+    { id: "m1", message_type: "reasoning_message", reasoning: "thinking" },
+    { id: "m1", message_type: "assistant_message", content: "answer" },
+    { id: "m2", message_type: "assistant_message", content: "plain" },
+  ]);
+  expect(rows.map((row) => row.id)).toEqual(["m1:thought", "m1", "m2"]);
+  expect(rows.map((row) => row.update.sessionUpdate)).toEqual([
+    "agent_thought",
+    "agent_message",
+    "agent_message",
+  ]);
+  expect(JSON.stringify(rows)).toContain('"messageId":"m1"');
+});
