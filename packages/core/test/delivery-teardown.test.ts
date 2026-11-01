@@ -4,93 +4,114 @@ import { expect } from "vitest";
 import { makeAppendDelivery } from "../src/delivery.js";
 import { body, test } from "./delivery-support.js";
 
-for (const action of ["caller", "owner", "timeout", "control"] as const)
-  test(`decoded reload is durable through SIGTERM grace: ${action}`, ({
-    store,
-    fs,
-    temp,
-    options,
-  }) =>
-    Effect.gen(function* () {
-      yield* store.stage("a", body);
-      yield* store.stage("b", body);
-      const owner = yield* Effect.acquireRelease(Scope.make(), (scope) =>
-        Scope.close(scope, Exit.void),
-      );
-      const ready =
-        yield* Deferred.make<ChildProcessSpawner.ChildProcessHandle>();
-      const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
-      const observing = ChildProcessSpawner.make((command) =>
-        spawner
-          .spawn(command)
-          .pipe(
-            Effect.tap((handle) =>
-              ChildProcess.isStandardCommand(command) &&
-              command.args.includes("append")
-                ? Deferred.succeed(ready, handle)
-                : Effect.void,
+for (const malformed of [false, true])
+  for (const action of [
+    "caller",
+    "owner",
+    "caller-grace",
+    "owner-grace",
+    "timeout",
+    "control",
+  ] as const)
+    test(`decoded reload is durable through SIGTERM grace: ${action}, malformed=${malformed}`, ({
+      store,
+      fs,
+      temp,
+      options,
+    }) =>
+      Effect.gen(function* () {
+        yield* store.stage("a", body);
+        yield* store.stage("b", body);
+        const owner = yield* Effect.acquireRelease(Scope.make(), (scope) =>
+          Scope.close(scope, Exit.void),
+        );
+        const ready =
+          yield* Deferred.make<ChildProcessSpawner.ChildProcessHandle>();
+        const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
+        const observing = ChildProcessSpawner.make((command) =>
+          spawner
+            .spawn(command)
+            .pipe(
+              Effect.tap((handle) =>
+                ChildProcess.isStandardCommand(command) &&
+                command.args.includes("append")
+                  ? Deferred.succeed(ready, handle)
+                  : Effect.void,
+              ),
             ),
-          ),
-      );
-      const service = yield* makeAppendDelivery({
-        ...options,
-        transport: {
-          ...options.transport,
-          timeoutMs: action === "timeout" ? 600 : 10000,
-          forceKillAfterMs: 1500,
-          env: {
-            ...options.transport?.env,
-            DELTA_DELIVERY_MODE: "reload-grace",
+        );
+        const service = yield* makeAppendDelivery({
+          ...options,
+          transport: {
+            ...options.transport,
+            timeoutMs:
+              action === "timeout" ||
+              action === "control" ||
+              action.endsWith("grace")
+                ? 600
+                : 10000,
+            forceKillAfterMs: 1500,
+            env: {
+              ...options.transport?.env,
+              DELTA_DELIVERY_MODE: malformed
+                ? "malformed-reload-grace"
+                : "reload-grace",
+            },
           },
-        },
-      }).pipe(Effect.provideService(Scope.Scope, owner));
-      const active = yield* service.attempt.pipe(
-        Effect.provideService(
-          ChildProcessSpawner.ChildProcessSpawner,
-          observing,
-        ),
-        Effect.forkChild,
-      );
-      // Child-written output alone is not decoding proof. SIGTERM records that the
-      // stream has failed and its process Scope has actually begun teardown.
-      yield* Effect.gen(function* () {
-        while (!(yield* fs.exists(`${temp}/calls.jsonl.term`)))
-          yield* Effect.sleep(5);
-      }).pipe(Effect.timeout(3000));
-      const handle = yield* Deferred.await(ready);
-      expect(yield* handle.isRunning).toBe(true);
-      expect((yield* service.progress).reloadObserved).toBe(true);
-      expect((yield* service.progress).pausePersisted).toBe(true);
-      yield* Effect.sleep(200);
-      if (action === "caller") yield* Fiber.interrupt(active);
-      if (action === "owner") yield* Scope.close(owner, Exit.void);
-      const outcome = yield* Fiber.await(active);
-      expect(Exit.isFailure(outcome)).toBe(true);
-      if (
-        Exit.isFailure(outcome) &&
-        (action === "caller" || action === "owner")
-      )
-        expect(Cause.hasInterrupts(outcome.cause)).toBe(true);
-      if (action === "timeout") {
-        const error = yield* Effect.flip(Fiber.join(active));
-        expect(error.failure).toHaveProperty("kind", "timeout");
-        expect(error.retry).toEqual({ kind: "unknown" });
-        expect(error.progress.reloadObserved).toBe(true);
-        expect(error.progress.pausePersisted).toBe(true);
-      }
-      expect((yield* store.snapshot).paused).toHaveProperty(
-        "code",
-        "reload_required",
-      );
-      expect((yield* store.snapshot).pending).toEqual([2]);
-      const progress = yield* service.progress;
-      expect(progress.committed).toEqual([1]);
-      expect(progress.reloadObserved).toBe(true);
-      expect(progress.pausePersisted).toBe(true);
-      yield* Effect.exit(handle.exitCode);
-      expect(yield* handle.isRunning).toBe(false);
-      expect(() => process.kill(handle.pid, 0)).toThrow();
-    }));
+        }).pipe(Effect.provideService(Scope.Scope, owner));
+        const active = yield* service.attempt.pipe(
+          Effect.provideService(
+            ChildProcessSpawner.ChildProcessSpawner,
+            observing,
+          ),
+          Effect.forkChild,
+        );
+        // Decoded/persisted progress, not child-written bytes, proves observation.
+        // Append now keeps scanning until exit/deadline/cancellation.
+        yield* Effect.gen(function* () {
+          while (!(yield* service.progress).pausePersisted)
+            yield* Effect.sleep(5);
+        }).pipe(Effect.timeout(3000));
+        const handle = yield* Deferred.await(ready);
+        expect(yield* handle.isRunning).toBe(true);
+        expect((yield* service.progress).reloadObserved).toBe(true);
+        expect((yield* service.progress).pausePersisted).toBe(true);
+        if (action.endsWith("grace"))
+          yield* Effect.gen(function* () {
+            while (!(yield* fs.exists(`${temp}/calls.jsonl.term`)))
+              yield* Effect.sleep(5);
+          }).pipe(Effect.timeout(3000));
+        yield* Effect.sleep(200);
+        if (action.startsWith("caller")) yield* Fiber.interrupt(active);
+        if (action.startsWith("owner")) yield* Scope.close(owner, Exit.void);
+        const outcome = yield* Fiber.await(active);
+        expect(Exit.isFailure(outcome)).toBe(true);
+        if (
+          Exit.isFailure(outcome) &&
+          (action.startsWith("caller") || action.startsWith("owner"))
+        )
+          expect(Cause.hasInterrupts(outcome.cause)).toBe(true);
+        if (action === "timeout" || action === "control") {
+          const error = yield* Effect.flip(Fiber.join(active));
+          expect(error.failure).toHaveProperty("kind", "timeout");
+          expect(error.retry).toEqual({ kind: "unknown" });
+          expect(error.progress.reloadObserved).toBe(true);
+          expect(error.progress.pausePersisted).toBe(true);
+        }
+        expect((yield* store.snapshot).paused).toHaveProperty(
+          "code",
+          "reload_required",
+        );
+        expect((yield* store.snapshot).pending).toEqual([2]);
+        const progress = yield* service.progress;
+        expect(progress.committed).toEqual([1]);
+        expect(progress.reloadObserved).toBe(true);
+        expect(progress.pausePersisted).toBe(true);
+        expect(yield* fs.exists(`${temp}/calls.jsonl.term`)).toBe(true);
+        yield* Effect.exit(handle.exitCode);
+        expect(yield* handle.isRunning).toBe(false);
+        expect(() => process.kill(handle.pid, 0)).toThrow();
+      }));
 
 test("mid-close admission cannot spawn while a later owner finalizer is blocked", ({
   store,
@@ -127,7 +148,7 @@ test("mid-close admission cannot spawn while a later owner finalizer is blocked"
   }));
 
 for (const mode of ["malformed-reload", "reload-zero"] as const)
-  test(`disclosed append parity difference: ${mode}`, ({ store, create }) =>
+  test(`append error classification: ${mode}`, ({ store, create }) =>
     Effect.gen(function* () {
       yield* store.stage("a", body);
       yield* store.stage("b", body);
@@ -135,13 +156,13 @@ for (const mode of ["malformed-reload", "reload-zero"] as const)
       const error = yield* Effect.flip(service.attempt);
       expect(error.failure).toHaveProperty(
         "_tag",
-        mode === "malformed-reload" ? "SchemaError" : "DeltaFailure",
+        mode === "malformed-reload"
+          ? "DeltaFailure"
+          : "DeliveryValidationError",
       );
       expect(error.progress.committed).toEqual([1]);
-      expect(error.progress.reloadObserved).toBe(mode === "reload-zero");
-      expect(error.progress.pausePersisted).toBe(mode === "reload-zero");
+      expect(error.progress.reloadObserved).toBe(true);
+      expect(error.progress.pausePersisted).toBe(true);
       expect((yield* store.snapshot).pending).toEqual([2]);
-      expect((yield* store.snapshot).paused?.code).toBe(
-        mode === "reload-zero" ? "reload_required" : undefined,
-      );
+      expect((yield* store.snapshot).paused?.code).toBe("reload_required");
     }));

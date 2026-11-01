@@ -1,5 +1,5 @@
 import { Effect, Schema, Stream } from "effect";
-import { watchJsonLinesObserved } from "./jsonl-process.js";
+import { watchDecodedJsonLines } from "./jsonl-process.js";
 import { start, validateRequest } from "./process-session.js";
 import { decodeResponse } from "./protocol.js";
 import { type ProcessRequest, TransportError } from "./transport-errors.js";
@@ -79,4 +79,4 @@ export const runJson = <S extends Schema.Constraint>(
 export const watchJsonLines = <S extends Schema.Constraint>(
   request: ProcessRequest,
   schema: S,
-) => watchJsonLinesObserved(request, schema);
+) => watchDecodedJsonLines(request, schema);

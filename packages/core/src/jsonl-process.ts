@@ -2,14 +2,13 @@
 import { Effect, Schema, Stream } from "effect";
 import { jsonLines } from "./jsonl.js";
 import { start, validateRequest } from "./process-session.js";
-import { decodeResponse, DeltaFailure } from "./protocol.js";
+import { decodeResponse } from "./protocol.js";
 import { type ProcessRequest, TransportError } from "./transport-errors.js";
 
 /** Frames can arrive before process exit. Only natural completion proves zero exit. */
-export const watchJsonLinesObserved = <S extends Schema.Constraint>(
+export const watchJsonLinesWith = <A, E, R>(
   request: ProcessRequest,
-  schema: S,
-  onDecodedFailure?: (failure: DeltaFailure) => Effect.Effect<void>,
+  decodeLine: (line: string) => Effect.Effect<A, E, R>,
 ) =>
   Stream.unwrap(
     Effect.gen(function* () {
@@ -21,26 +20,7 @@ export const watchJsonLinesObserved = <S extends Schema.Constraint>(
             process.stdout,
             limits.maxFrameBytes,
             process.stderr,
-          ).pipe(
-            Stream.mapEffect((line) => {
-              const decode = Schema.decodeEffect(
-                Schema.fromJsonString(Schema.Unknown),
-              )(line).pipe(Effect.flatMap(decodeResponse(schema)));
-              if (!onDecodedFailure) return decode;
-              // This runs INSIDE the process Scope, before failed decoding can
-              // start teardown. Mask decode + observation together so cancellation
-              // cannot separate a decoded reload from its durable pause attempt.
-              return Effect.uninterruptible(
-                decode.pipe(
-                  Effect.tapError((failure) =>
-                    failure instanceof DeltaFailure
-                      ? onDecodedFailure(failure)
-                      : Effect.void,
-                  ),
-                ),
-              );
-            }),
-          );
+          ).pipe(Stream.mapEffect(decodeLine));
           return Stream.merge(
             Stream.merge(frames, process.diagnostics),
             process.input,
@@ -59,4 +39,16 @@ export const watchJsonLinesObserved = <S extends Schema.Constraint>(
         ),
       );
     }),
+  );
+
+/** Generic decoding remains fail-fast. Specialized append scanning uses only the
+ * internal line seam above, with identical framing, budgets and child ownership. */
+export const watchDecodedJsonLines = <S extends Schema.Constraint>(
+  request: ProcessRequest,
+  schema: S,
+) =>
+  watchJsonLinesWith(request, (line) =>
+    Schema.decodeEffect(Schema.fromJsonString(Schema.Unknown))(line).pipe(
+      Effect.flatMap(decodeResponse(schema)),
+    ),
   );

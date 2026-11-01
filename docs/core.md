@@ -372,14 +372,17 @@ queue, server upload or all records ever staged. Progress contains:
   fails; `reloadObserved`: a valid reload envelope was decoded inside the process
   lifetime, not merely written/read as bytes; `pausePersisted`: this attempt
   confirmed a durable reload pause.
+- `lastError`: the last recognized normalized append error envelope, or null.
+  This is a detached defensive copy, retained independently of terminal failure;
+  a later ordinary error cannot erase reload observation or confirmed pause.
 - `phase` and explicit acknowledgement choice. Phase identifies the attempted
   operation, not proof that a child started or the server accepted input.
 
 `DeliveryAttemptError` carries the typed underlying `failure`, progress and explicit
 retry hint (`retryDecision` for structured CLI errors; otherwise `unknown`). No
 retry occurs. For append, a valid `reload_required` is observed and its pause
-attempted uninterruptibly **inside the frame decoder and process resource Scope**,
-before the error can trigger child teardown. Decode and observation are masked
+attempted uninterruptibly **inside the append line scanner and process resource Scope**,
+before child teardown. Decode and observation are masked
 together; caller cancellation or owner close during SIGTERM/SIGKILL grace cannot
 skip persistence by bypassing an outer error handler. This is not an outer
 `tapError` after resource release. `reloadObserved` may be true while
@@ -403,22 +406,44 @@ confirmed prefix, not a claim that other records were unaccepted. Pending record
 can also have reached Delta despite absent receipts. Do not infer non-acceptance
 or manufacture new records/sequences from any attempt failure.
 
-### Remaining append parity differences
+### Append error compatibility and remaining differences
 
-This is not full append parity. The public generic watch contract remains
-fail-fast and unchanged. Two append-specific differences are explicitly tested:
+Append alone continues bounded line scanning after malformed JSON, malformed
+receipt/schema data, correlation failure or a recognized error envelope. Receipt
+admission closes permanently at the first such boundary: later matching receipts
+cannot resume it. Prefix correlation still checks exact sent sequence/thread and
+original nullable turn, and each matched receipt is durably applied before moving
+on. Storage failures still terminate immediately and retain conservative poisoning.
+Generic `watchJsonLines` remains fail-fast; byte framing, malformed UTF-8, frame/
+total output limits, input failure and deadlines are unchanged and can stop the
+scanner before any later envelope is decoded. Bytes written/read are not proof of
+reload observation.
 
-- **Malformed line before a later reload envelope:** a malformed JSON/frame/schema
-  failure ends this receipt stream, so a later envelope may never be decoded or
-  paused. Pinned `appendFailure` scans captured raw stdout from the end on nonzero
-  exit and can find that later error. Here `reloadObserved` stays false for an
-  unexamined envelope; the confirmed receipt prefix survives and the suffix stays
-  pending/uncertain. There is no claim that raw bytes prove a decoded reload.
-- **Valid error envelope with exit zero:** the generic stream treats it as a
-  `DeltaFailure` and a decoded reload pauses the outbox regardless of exit status.
-  Pinned append delivery classifies error envelopes only for nonzero exits; its
-  zero-exit acknowledgment mismatch is `invalid_acknowledgment`. No append-specific
-  raw-output scanner or exit-dependent envelope classifier is implemented here.
+For a natural nonzero append exit, the **last valid structured error** wins over
+the exit failure. Non-JSON and non-envelope lines do not erase it. This matches
+pinned `appendFailure`'s backward scan without capturing whole stdout. Only one
+normalized error object is retained (bounded by the existing frame/output limits),
+plus monotonic reload/pause facts. Decoding a first reload attempts its pause
+uninterruptibly inside the process Scope; subsequent reload diagnostics or ordinary
+errors never replace that first pause, reset confirmation, or trigger a new attempt
+to persist it. Ambiguous pause persistence remains visible, not retried or repaired.
+An error no longer immediately ends the child: scanning waits for natural completion,
+the existing deadline/limit, or cancellation. Cancellation/owner close still tear
+down the owned direct child and do not become success.
+
+Exit zero with **any observed error or receipt/correlation failure** is an explicit
+`DeliveryValidationError` (`receipt`, an invalid ACK), not a structured nonzero
+command failure. Empty/shortened otherwise-valid output remains `incomplete`.
+`lastError` and reload/pause facts remain available even with invalid ACK, transport
+failure or cancellation (`progress` after cancellation). No retry occurs; an unknown
+retry hint is not permission to bypass a durable pause.
+
+Two deliberate stricter behaviors remain: a complete matching prefix followed by
+an error still fails here, whereas upstream can return success after accounting
+for all sent records; and any decoded reload conservatively persists a pause even
+on exit zero/cancellation, rather than waiting for nonzero exit classification.
+Pause persistence is never delayed or undone to mimic that classification. This
+is not full append parity and adds no recovery/submission policy.
 
 Pinned authorities:
 [threadContract/threadAppend](https://github.com/zed-industries/delta-claude/blob/ac769c681ba7a95ec7347b591f0858857a1a9e80/hooks/cli/delta-cli.ts#L384),
@@ -519,19 +544,27 @@ nonzero exits, structured failures, limits, timeout and cancellation remain visi
 Already emitted frames do not imply successful completion. Structured failures retain
 retry hints without retrying. Unlike the upstream line reader, blank lines are
 rejected; the core accepts a final unterminated JSON line and rejects malformed
-UTF-8. Malformed error envelopes remain visible schema failures. This wire operation
+UTF-8. Error envelopes follow the pinned recognition described below; malformed
+known events remain visible schema failures. This wire operation
 alone does not enforce ready ordering or project a snapshot; the separate owner
 below handles those boundaries. The separate compatibility check above validates
 bound producer/frontier facts; automatic reconciliation, host watch workflow and
 full parity remain unimplemented.
 
-Additional compatibility limits are explicit: any top-level `error` key is
-treated as an envelope (W1), so even `error: null` rejects an otherwise valid frame.
-Invalid optional error fields (W3) reject the envelope rather than preserving its
-code and dropping the bad hint as upstream does. A bare `{type: "error"}` (W2) also
-fails instead of being ignored. The exported wire codecs include the error
-variant, but `decodeWatchEvent` and `watchThread` surface valid envelopes as
-`DeltaFailure`, not event values. Default transport budgets (W4) terminate the child
+Envelope differences W1/W2/W3 are corrected for `decodeWatchEvent` and
+`watchThread`: only an error object with string `code` and `message` is terminal
+(empty strings are valid). A valid known event with null/non-envelope error data
+decodes normally. Bare `type: "error"` without a recognized envelope becomes an
+explicit `UnknownWatchEvent`; other known malformed tags still fail. Optional
+`reason` is retained only as a nonempty diagnostic string, `retryable` only as a
+boolean, and `retry_after_ms` only as a finite nonnegative number. Invalid hints
+are independently absent, never coerced; they cannot hide an authoritative code.
+Reason never controls reload/retry behavior. Unknown envelope extension fields
+remain retained. Exported raw codecs remain strict typed shapes; normalization is
+at the operation's wire boundary. `decodeResponse` and generic transport retain
+their original strict envelope/fail-fast behavior.
+
+Default transport budgets (W4) terminate the child
 at 120 seconds or 16 MiB cumulative output; a future long-lived owner must choose
 appropriate finite budgets explicitly. Configuration (W5) is read on each cold-stream
 materialization; callers must not mutate it during use.
@@ -634,7 +667,7 @@ shared memory) fail `invalid-json-value`. No caller-owned mutable value is retai
 Otherwise valid, very deeply nested JSON can exceed the runtime's
 `structuredClone` limit and receive the same typed `uncloneable-event` error.
 No portable maximum nesting depth is promised.
-Source wire decode failures remain unchanged; this does not alter W1–W3.
+Projection retains source wire failures; envelope normalization occurs upstream of it.
 
 TDD began with the missing-module failure; an additional red ownership probe
 exposed shared-memory values bypassing clone-only isolation, now rejected as
@@ -698,8 +731,9 @@ The table comes from the isolated single-worker run above.
 The separate check above now compares bound producer/frontier facts against the
 durable outbox without changing this projection. Remaining: automatic reconciliation, authority/
 turn ownership, snapshot-to-host ledger/model delivery, inspection, reconnect/reset
-policy, UI presence timing, sharing and adapter workflow. Wire limits W1–W5 above
-remain unchanged; append N1/N2 are untouched. This is not full watch parity.
+policy, UI presence timing, sharing and adapter workflow. W4/W5 and unrelated
+framing/UTF-8/budget differences remain. Append error compatibility is described
+above, with deliberate stricter behaviors. This is not full watch parity.
 
 ## Provenance and licensing
 

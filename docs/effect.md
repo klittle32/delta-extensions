@@ -46,8 +46,8 @@ and the installed 0.63.0 README/matrix. The resulting configuration uses:
 No Oxlint rule is suppressed. Real findings were corrected: typed decoders for
 known encoded values, selective `catchIf`, concrete test error channels, and
 Effect-valued `replay`/`snapshot` service members instead of lazy zero-argument
-functions. The remaining **247 warnings**, all `effecttsgo/unstable-api-usage`,
-are intentionally visible: the required exact-pinned Effect process, filesystem,
+functions. `effecttsgo/unstable-api-usage` warnings remain intentionally visible:
+the required exact-pinned Effect process, filesystem,
 path, digest and Node services, and @effect/vitest APIs carry upstream unstable
 annotations. These warnings are not zero diagnostics and do not certify API
 stability. The shipped recommended severity policy fails errors and reports
@@ -129,10 +129,10 @@ caller interruption via `Fiber.interrupt`. Owner close also interrupts invocatio
 made from outer fibers; no fiber persists between attempts. Incremental receipt
 correlation precedes individual durable application. Receipt observation/application
 use uninterruptible sections so progress and fencing cannot be lost there. Append
-reload observation/pause runs inside the internal JSONL frame decoder, before
-its process Scope unwinds. The decode + typed-error observer is uninterruptible:
+reload observation/pause runs inside the append-specific line scanner, before
+its process Scope unwinds. Line decode + typed-error observation is uninterruptible:
 a cancellation during child SIGTERM grace cannot bypass pause persistence via
-the outer catch. Generic public `watchJsonLines` supplies no observer and retains
+the outer catch. Generic public `watchJsonLines` retains
 its original fail-fast semantics. `reloadObserved` distinguishes a decoded
 envelope from successful pause persistence and from merely written/read bytes.
 Admission checks the public stable `Scope.state` Closed tag, which is set as
@@ -222,7 +222,8 @@ measurements, exact environment, timings and reproduction command are recorded i
 The projection checkpoint reported 228 visible unstable API warnings; there is no zero-warning
 claim. See [projection boundary](core.md#stateful-watch-projection) for partial/
 stale state and remaining reconciliation/host-policy work.
-Wire W1–W5 and append N1/N2 compatibility limits are unchanged. The parent reran
+At that projection checkpoint, wire W1–W5 and append N1/N2 were unchanged;
+current compatibility boundaries are described in `core.md`. The parent reran
 the frozen install and full checks; independent re-review found no blockers.
 Remote CI is reported separately. No live Delta/host verification is claimed.
 

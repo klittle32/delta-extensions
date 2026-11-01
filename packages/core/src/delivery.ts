@@ -1,5 +1,14 @@
+import { recognizeError } from "./error-envelope.js";
 // AGPL-3.0-only; invocation and incremental durable receipt adaptation: NOTICE.
-import { Context, Effect, Fiber, Layer, Semaphore, Stream } from "effect";
+import {
+  Context,
+  Effect,
+  Fiber,
+  Layer,
+  Semaphore,
+  Schema,
+  Stream,
+} from "effect";
 import {
   type AttemptProgress,
   type AttemptResult,
@@ -15,10 +24,12 @@ import {
   DeltaFailure,
   negotiate,
   Receipt,
+  ErrorDetail,
   retryDecision,
 } from "./protocol.js";
 import { runJson } from "./transport.js";
-import { watchJsonLinesObserved } from "./jsonl-process.js";
+import { TransportError } from "./transport-errors.js";
+import { watchJsonLinesWith } from "./jsonl-process.js";
 export {
   type AttemptProgress,
   type AttemptResult,
@@ -64,6 +75,7 @@ export const makeAppendDelivery = (options: DeliveryOptions) =>
       fenced: [],
       reloadObserved: false,
       pausePersisted: false,
+      lastError: null,
     });
     let last = fresh();
     yield* Effect.addFinalizer(() =>
@@ -75,6 +87,8 @@ export const makeAppendDelivery = (options: DeliveryOptions) =>
     const runAttempt = gate.withPermits(1)(
       Effect.suspend(() => {
         last = fresh();
+        let receiptInvalid = false;
+        let receiptAdmission = true;
         let pauseFailure: OutboxError | undefined;
         const observeReload = (failure: DeltaFailure) =>
           Effect.uninterruptible(
@@ -126,8 +140,8 @@ export const makeAppendDelivery = (options: DeliveryOptions) =>
             ),
           );
           last = { ...last, phase: "append" };
-          yield* Stream.runForEach(
-            watchJsonLinesObserved(
+          yield* Stream.runDrain(
+            watchJsonLinesWith(
               {
                 ...base,
                 args: [
@@ -148,42 +162,87 @@ export const makeAppendDelivery = (options: DeliveryOptions) =>
                 stdin: batch.map((row) => row.line).join(""),
                 maxInputBytes: 16 * 1024 * 1024,
               },
-              Receipt,
-              observeReload,
+              (line) =>
+                Effect.uninterruptible(
+                  Effect.gen(function* () {
+                    const parsed = yield* Schema.decodeEffect(
+                      Schema.fromJsonString(Schema.Unknown),
+                    )(line).pipe(Effect.result);
+                    if (parsed._tag === "Failure") {
+                      receiptInvalid = true;
+                      receiptAdmission = false;
+                      return;
+                    }
+                    const value = parsed.success;
+                    const envelope =
+                      typeof value === "object" &&
+                      value !== null &&
+                      "error" in value
+                        ? recognizeError(value.error)
+                        : undefined;
+                    if (envelope) {
+                      const error =
+                        yield* Schema.decodeEffect(ErrorDetail)(envelope);
+                      last = { ...last, lastError: error };
+                      receiptAdmission = false;
+                      yield* observeReload(new DeltaFailure({ error }));
+                      return;
+                    }
+                    if (!receiptAdmission) return;
+                    const decoded = yield* Schema.decodeUnknownEffect(Receipt)(
+                      value,
+                    ).pipe(Effect.result);
+                    if (decoded._tag === "Failure") {
+                      receiptInvalid = true;
+                      receiptAdmission = false;
+                      return;
+                    }
+                    const receipt = decoded.success;
+                    const expected = batch[last.observed.length];
+                    if (
+                      !expected ||
+                      receipt.thread_id !== snapshot.identity.threadId ||
+                      receipt.sequence !== expected.sequence ||
+                      receipt.turn_sequence !== (expected.turnSequence ?? null)
+                    ) {
+                      receiptInvalid = true;
+                      receiptAdmission = false;
+                      return;
+                    }
+                    last = {
+                      ...last,
+                      observed: [...last.observed, receipt.sequence],
+                      fenced:
+                        receipt.disposition === "fenced" &&
+                        receipt.turn_sequence !== null
+                          ? [...last.fenced, receipt.turn_sequence]
+                          : last.fenced,
+                    };
+                    yield* store.applyReceipts([receipt]);
+                    last = {
+                      ...last,
+                      committed: [...last.committed, receipt.sequence],
+                      remainingBatch: batch
+                        .slice(last.observed.length)
+                        .map((row) => row.sequence),
+                    };
+                  }),
+                ),
             ),
-            (receipt) =>
-              Effect.uninterruptible(
-                Effect.gen(function* () {
-                  const expected = batch[last.observed.length];
-                  if (
-                    !expected ||
-                    receipt.thread_id !== snapshot.identity.threadId ||
-                    receipt.sequence !== expected.sequence ||
-                    receipt.turn_sequence !== (expected.turnSequence ?? null)
-                  )
-                    return yield* new DeliveryValidationError({
-                      kind: "receipt",
-                    });
-                  last = {
-                    ...last,
-                    observed: [...last.observed, receipt.sequence],
-                    fenced:
-                      receipt.disposition === "fenced" &&
-                      receipt.turn_sequence !== null
-                        ? [...last.fenced, receipt.turn_sequence]
-                        : last.fenced,
-                  };
-                  yield* store.applyReceipts([receipt]);
-                  last = {
-                    ...last,
-                    committed: [...last.committed, receipt.sequence],
-                    remainingBatch: batch
-                      .slice(last.observed.length)
-                      .map((row) => row.sequence),
-                  };
-                }),
-              ),
+          ).pipe(
+            Effect.catchIf(
+              (failure) =>
+                failure instanceof TransportError &&
+                failure.kind === "exit" &&
+                last.lastError !== null,
+              () =>
+                Effect.fail(
+                  new DeltaFailure({ error: structuredClone(last.lastError!) }),
+                ),
+            ),
           );
+          if (receiptInvalid || last.lastError !== null)
+            return yield* new DeliveryValidationError({ kind: "receipt" });
           if (last.committed.length !== batch.length)
             return yield* new DeliveryValidationError({ kind: "incomplete" });
           last = { ...last, phase: "done" };

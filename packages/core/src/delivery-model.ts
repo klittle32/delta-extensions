@@ -4,6 +4,7 @@ import type { OutboxError } from "./outbox.js";
 import type { StoredRecord } from "./outbox-model.js";
 import type {
   DeltaFailure,
+  ErrorDetail,
   retryDecision,
   UnsupportedContract,
 } from "./protocol.js";
@@ -42,6 +43,8 @@ export interface AttemptProgress {
   /** A valid reload envelope decoded inside the process lifetime, not just bytes read. */
   readonly reloadObserved: boolean;
   readonly pausePersisted: boolean;
+  /** Last recognized append envelope; independent of exit classification/pause. */
+  readonly lastError: typeof ErrorDetail.Type | null;
 }
 export class DeliveryValidationError extends Data.TaggedError(
   "DeliveryValidationError",
@@ -88,6 +91,8 @@ export const selectBatch = (pending: readonly StoredRecord[]) => {
 };
 export const copyProgress = (progress: AttemptProgress): AttemptProgress => ({
   ...progress,
+  lastError:
+    progress.lastError === null ? null : structuredClone(progress.lastError),
   batch: [...progress.batch],
   observed: [...progress.observed],
   committed: [...progress.committed],

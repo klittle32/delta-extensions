@@ -168,7 +168,6 @@ it.effect(
         "live",
         {},
         { type: 1 },
-        { type: "error" },
         { type: "ready", thread_id: "t" },
         { type: "ready", thread_id: "", producer: null },
         {

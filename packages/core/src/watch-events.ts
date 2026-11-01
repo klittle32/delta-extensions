@@ -1,7 +1,8 @@
+import { recognizeError } from "./error-envelope.js";
 // AGPL-3.0-only; pinned contract-8 watch decoder: NOTICE, docs/core.md.
-import { Schema } from "effect";
+import { Effect, Schema } from "effect";
 import {
-  decodeResponse,
+  DeltaFailure,
   ErrorDetail,
   ProducerTurnEvent,
   Status,
@@ -71,7 +72,9 @@ const cases = {
   error: watchObject({ type: Schema.Literal("error"), error: ErrorDetail }),
 };
 export const KnownWatchEvent = Schema.Union(Object.values(cases));
-const knownNames = new Set<string>(Object.keys(cases));
+const knownNames = new Set<string>(
+  Object.keys(cases).filter((name) => name !== "error"),
+);
 const FutureEvent = watchObject({
   type: Schema.String.check(Schema.makeFilter((type) => !knownNames.has(type))),
 });
@@ -82,4 +85,25 @@ export const WatchEvent = Schema.Union([
 ]);
 /** Terminal envelopes fail as DeltaFailure, like pinned watchEvents, rather than becoming data. */
 export const decodeWatchEvent = (input: unknown) =>
-  decodeResponse(WatchEvent)(input);
+  Effect.gen(function* () {
+    const envelope =
+      typeof input === "object" && input !== null && "error" in input
+        ? recognizeError(input.error)
+        : undefined;
+    if (envelope)
+      return yield* new DeltaFailure({
+        error: yield* Schema.decodeEffect(ErrorDetail)(envelope),
+      });
+    // The pinned parser has no ordinary `error` event case. Only a recognized
+    // envelope makes it terminal; bare error types remain explicitly unknown.
+    if (
+      typeof input === "object" &&
+      input !== null &&
+      "type" in input &&
+      input.type === "error"
+    )
+      return yield* Schema.decodeUnknownEffect(
+        taggedWatchValue(FutureEvent, "UnknownWatchEvent"),
+      )(input);
+    return yield* Schema.decodeUnknownEffect(WatchEvent)(input);
+  });

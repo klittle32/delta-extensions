@@ -19,7 +19,20 @@ else if (args[0] === "--json" && args[1] === "thread" && args[2] === "watch") {
     producer: { source, external_id, next_sequence: 1, turn: null },
     fixturePid: process.pid,
   });
-  if (mode === "hang") setInterval(() => {}, 1000);
+  if (mode === "compat") {
+    emit({ type: "live", error: null });
+    emit({ type: "error" });
+    emit({ type: "live", error: { code: 1 } });
+    emit({
+      error: {
+        code: "watch_reset",
+        message: "normalized",
+        reason: 3,
+        retryable: "true",
+        retry_after_ms: -1,
+      },
+    });
+  } else if (mode === "hang") setInterval(() => {}, 1000);
   else if (mode === "malformed")
     emit({ type: "item", item: { id: "missing-fields" } });
   else if (mode === "limit") process.stdout.write("x".repeat(10000));

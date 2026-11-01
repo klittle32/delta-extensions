@@ -27,6 +27,7 @@ const binding = {
 };
 for (const mode of [
   "normal",
+  "compat",
   "incompatible",
   "malformed",
   "nonzero",
@@ -98,12 +99,19 @@ for (const mode of [
               ? "UnsupportedContract"
               : mode === "malformed"
                 ? "SchemaError"
-                : mode === "error"
+                : mode === "error" || mode === "compat"
                   ? "DeltaFailure"
                   : "TransportError",
           );
       }
       if (result._tag === "Failure") {
+        if (mode === "compat") {
+          expect(seen).toEqual(["ready", "live", "unknown", "live"]);
+          expect(result.failure).toHaveProperty("error", {
+            code: "watch_reset",
+            message: "normalized",
+          });
+        }
         if (mode === "error")
           expect(result.failure).toMatchObject({
             error: {

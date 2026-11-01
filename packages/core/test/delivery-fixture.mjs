@@ -37,11 +37,46 @@ if (args.join(" ") === "--json thread contract") {
           : "recorded",
     version: "actor.42",
   });
-  if (mode === "empty") process.exitCode = 0;
+  if (mode.startsWith("scan-")) {
+    emit(receipt(rows[0]));
+    if (mode === "scan-complete-zero") emit(receipt(rows[1]));
+    else if (mode === "scan-wrong")
+      emit({ ...receipt(rows[1]), thread_id: "wrong" });
+    else process.stdout.write("not json\n");
+    emit({
+      error: {
+        code: "reload_required",
+        message: "first reload",
+        retryable: "bad",
+      },
+    });
+    emit(receipt(rows[1])); // Never reopens receipt admission.
+    if (mode === "scan-multiple")
+      emit({
+        error: {
+          code: "reload_required",
+          message: "second reload",
+          retryable: false,
+        },
+      });
+    emit({
+      error: {
+        code: "offline",
+        message: "last error",
+        retryable: true,
+        retry_after_ms: 123,
+      },
+    });
+    process.stdout.write("later non-json\n");
+    emit({ error: { code: 7, message: "not an envelope" } });
+    if (mode === "scan-encoding") process.stdout.write(Buffer.from([255, 10]));
+    if (mode === "scan-limit") process.stdout.write("x".repeat(5000));
+    process.exitCode = mode.includes("zero") ? 0 : 3;
+  } else if (mode === "empty") process.exitCode = 0;
   else if (mode === "wrong-first")
     emit({ ...receipt(rows[0]), thread_id: "wrong" });
   else {
-    if (mode === "reload-grace")
+    if (mode.endsWith("reload-grace"))
       process.on("SIGTERM", () =>
         writeFileSync(process.env.DELTA_DELIVERY_LOG + ".term", "SIGTERM"),
       );
@@ -49,7 +84,8 @@ if (args.join(" ") === "--json thread contract") {
     if (process.env.DELTA_DELIVERY_ACK_GATE)
       while (!existsSync(process.env.DELTA_DELIVERY_ACK_GATE))
         await new Promise((resolve) => setTimeout(resolve, 5));
-    if (mode === "reload-grace") {
+    if (mode.endsWith("reload-grace")) {
+      if (mode.startsWith("malformed")) process.stdout.write("not json\n");
       emit({
         error: {
           code: "reload_required",

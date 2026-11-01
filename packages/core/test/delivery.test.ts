@@ -105,9 +105,15 @@ for (const mode of [
       yield* store.stage("b", body);
       const service = yield* create(mode);
       const error = yield* Effect.flip(service.attempt);
-      const tag = ["partial", "empty", "wrong", "reorder", "extra"].includes(
-        mode,
-      )
+      const tag = [
+        "partial",
+        "empty",
+        "wrong",
+        "reorder",
+        "extra",
+        "malformed",
+        "unknown",
+      ].includes(mode)
         ? "DeliveryValidationError"
         : ["retry", "reload"].includes(mode)
           ? "DeltaFailure"

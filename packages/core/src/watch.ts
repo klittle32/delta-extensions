@@ -1,12 +1,8 @@
 // AGPL-3.0-only; pinned readonly thread-watch invocation: NOTICE, docs/core.md.
 import { Effect, Schema, Stream } from "effect";
 import { Contract, negotiate } from "./protocol.js";
-import {
-  type ProcessRequest,
-  runJson,
-  TransportError,
-  watchJsonLines,
-} from "./transport.js";
+import { type ProcessRequest, runJson, TransportError } from "./transport.js";
+import { watchJsonLinesWith } from "./jsonl-process.js";
 import { decodeWatchEvent } from "./watch-events.js";
 const id = Schema.String.check(Schema.isMinLength(1));
 export const WatchBinding = Schema.Struct({
@@ -66,7 +62,7 @@ export const watchThread = (options: WatchOptions) =>
           Contract,
         ),
       );
-      return watchJsonLines(
+      return watchJsonLinesWith(
         {
           ...base,
           args: [
@@ -80,7 +76,10 @@ export const watchThread = (options: WatchOptions) =>
             binding.externalId,
           ],
         },
-        Schema.Unknown,
-      ).pipe(Stream.mapEffect(decodeWatchEvent));
+        (line) =>
+          Schema.decodeEffect(Schema.fromJsonString(Schema.Unknown))(line).pipe(
+            Effect.flatMap(decodeWatchEvent),
+          ),
+      );
     }),
   );

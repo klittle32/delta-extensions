@@ -5,6 +5,7 @@ Copyright Zed Industries, AGPL-3.0-only, pinned commit
 ac769c681ba7a95ec7347b591f0858857a1a9e80 (version 0.1.32).
 https://github.com/zed-industries/delta-claude/tree/ac769c681ba7a95ec7347b591f0858857a1a9e80
 Sources: hooks/register.tsx (dedicated menu routing), hooks/setup/commands.ts,
+hooks/setup/project-policy.ts and its tests (repository policy),
 hooks/cli/thread-commands.ts, hooks/cli/command-reader.ts (transport invariants),
 hooks/recording/outbox.ts, hooks/recording/delivery.ts, hooks/recording/content.ts,
 hooks/recording/title.ts and CLI fixture definitions.
@@ -60,3 +61,15 @@ Producer-frontier check: range and identity validation adapted from pinned
 hooks/cli/thread-commands.ts:564–579 and its tests at :65–80. New typed Effect
 check and guarded read-only outbox operation preserve the journal, receipts,
 fences and reload pause; no replay, authority, repair or ACK promotion added.
+
+Error-compatibility leaf: envelope recognition and independently optional hints
+adapted from pinned hooks/cli/thread-commands.ts:138–147; append error scanning
+from :220–230 and receipt-prefix stopping from hooks/recording/outbox.ts:24–40;
+exit classification from hooks/recording/delivery.ts:350–355. Local modifications
+keep bounded incremental scanning, durable receipt progress and monotonic reload
+pause observation; exit-zero observed errors remain explicit failures.
+
+Letta organization slice: CLI discovery and organization command behavior adapted
+from pinned hooks/cli/cli.ts, hooks/cli/delta-cli.ts, hooks/setup/commands.ts and
+hooks/setup/setup.ts. Public stock mod registration, Effect lifecycle ownership,
+bounded text subprocess capture, standalone bundle and local fixtures are new.
