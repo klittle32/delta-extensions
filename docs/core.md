@@ -233,6 +233,77 @@ Test-only explicit lock removal demonstrates intact reopen versus refusal of an
 ambiguous journal; production code never does this. No raw Node persistence syscall
 or hidden runtime was needed. No submission/network operation is provided.
 
+## Producer/frontier compatibility check
+
+`checkProducerFrontier(local, observation)` is a typed Effect validation over
+supplied facts. `local` contains bound `identity: { threadId, source, externalId }`,
+`nextSequence` and pending sequence numbers; an outbox snapshot supplies those
+fields. `observation` supplies the shared `{ thread_id, producer }` fields from
+ready/status. It validates that shared shape and the full nullable producer
+structure, not an entire status response or watch envelope. Wire decoding remains
+a separate operation. Caller values are cloned and JSON-validated when the Effect
+executes; throwing getters/non-JSON values and malformed selected fields produce
+bounded typed errors without retaining caller objects or diagnostic payloads.
+
+The exact pinned rule is:
+
+- Thread, source and external ID must match the bound producer exactly. There is
+  no Claude identity default, actor/name comparison, URL inference or new producer.
+  A null producer is valid wire data but incompatible with this bound-producer
+  check, even for an empty journal. Local scopeId is already bound by openOutbox;
+  ready/status does not supply a remote scopeId to compare.
+- Let `N = nextSequence`, `A = min(pending, N)` and `R = producer.next_sequence`.
+  Compatibility requires **A ≤ R ≤ N**. `A` is an exclusive acknowledged-prefix
+  boundary, not the last acknowledged sequence. Empty pending requires `R=N`.
+  `R=N` with pending records is permitted: a receipt may have been lost.
+- Results are frozen detached `ProducerFrontierFacts`: identity,
+  `acknowledgedBefore` (A), `nextSequence` (N), `reportedNextSequence` (R).
+  Failure is `ProducerFrontierError` with invalid-local/invalid-observation,
+  thread-mismatch/producer-mismatch, behind or ahead. Neither result grants write
+  authority, proves server upload, acknowledges any record or allocates a sequence.
+
+`store.checkFrontier(observation)` derives A/N from the current journal state under
+its existing guard/semaphore and invokes the same check. The new operation writes
+no journal events and is available while reload-paused. Expected incompatibility
+or malformed remote input occurs outside guard's corruption handler: it leaves the
+healthy handle reusable and releases its writer lock normally on close. Genuine
+on-disk integrity/read failures retain the existing conservative poisoning/lock
+behavior. Observation cloning/validation also runs while this permit is held;
+large unrelated payloads can delay other outbox operations. Supply the bounded
+ready/status observation, not an entire inventory. No append preflight or watch
+integration is added; an empty append still performs no subprocess work.
+
+A check compares the supplied observation against local state **at check time**.
+It proves neither observation freshness nor continued compatibility after local or
+remote changes. A queued/deferred check uses the local bounds when it obtains the
+permit; a previously compatible observation can subsequently fail behind. Success
+is not a cached authorization or permission to clear any pause.
+
+Local ACK is CLI-local durability, not server acknowledgment/upload. The existing
+append choice remains explicit, and its receipt journal does not persist ACK-mode
+provenance. Receipt `next_sequence` is cumulative: receipt for record 1 with frontier
+4 acknowledges only record 1, not pending records 2/3. A ready/status frontier
+never synthesizes those receipts or causes automatic replay. Fenced receipts keep
+the original turn association; turn/producer reports remain facts, not ownership.
+A compatible frontier cannot clear `reload_required`. Retained acknowledged bytes
+are not a recovery policy: no rewind, ACK promotion, repair or re-import is added.
+
+TDD first failed on the missing helper/outbox operation. **21 new tests; 266 total
+across twenty-three regular suites** cover identities/null producer, boundary and
+lost-receipt cases, malformed inputs/getters, maximum-safe frontiers, detached
+facts, cumulative receipts, actual filesystem byte/receipt/allocation/fence/pause
+preservation and reopen. An injected blocked staging guard proves queued checks
+use the same permit/current bounds. Remote failures close/reopen normally; real
+journal corruption still poisons and retains the lock. These are deterministic
+local tests, not live Delta/host acceptance. The parent reran the frozen install
+and full checks; independent review found no blockers. Remote CI is reported
+separately.
+
+Authority: pinned `hooks/cli/thread-commands.ts:564–579` and tests `:65–80`;
+`hooks/recording/delivery.ts:46–53,300–319` (ACK scope/receipts/fences),
+`hooks/recording/outbox.ts:20–40` (exact receipt prefix). The adaptation uses the
+explicit bound source/externalId instead of upstream's Claude-specific identity.
+
 ## One-attempt append delivery
 
 `makeAppendDelivery(options)` requires the bound `ProducerOutbox` and a Scope;
@@ -450,8 +521,9 @@ retry hints without retrying. Unlike the upstream line reader, blank lines are
 rejected; the core accepts a final unterminated JSON line and rejects malformed
 UTF-8. Malformed error envelopes remain visible schema failures. This wire operation
 alone does not enforce ready ordering or project a snapshot; the separate owner
-below handles those boundaries. Producer binding/frontier reconciliation, host
-watch workflow and full parity remain unimplemented.
+below handles those boundaries. The separate compatibility check above validates
+bound producer/frontier facts; automatic reconciliation, host watch workflow and
+full parity remain unimplemented.
 
 Additional compatibility limits are explicit: any top-level `error` key is
 treated as an envelope (W1), so even `error: null` rejects an otherwise valid frame.
@@ -623,7 +695,8 @@ concurrent load. The regular gate retains structural work-count regressions; the
 separate benchmark config avoids adding measurement load to lifecycle tests.
 The table comes from the isolated single-worker run above.
 
-Remaining: producer/frontier reconciliation against durable local state, authority/
+The separate check above now compares bound producer/frontier facts against the
+durable outbox without changing this projection. Remaining: automatic reconciliation, authority/
 turn ownership, snapshot-to-host ledger/model delivery, inspection, reconnect/reset
 policy, UI presence timing, sharing and adapter workflow. Wire limits W1–W5 above
 remain unchanged; append N1/N2 are untouched. This is not full watch parity.

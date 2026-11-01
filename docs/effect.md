@@ -46,7 +46,7 @@ and the installed 0.63.0 README/matrix. The resulting configuration uses:
 No Oxlint rule is suppressed. Real findings were corrected: typed decoders for
 known encoded values, selective `catchIf`, concrete test error channels, and
 Effect-valued `replay`/`snapshot` service members instead of lazy zero-argument
-functions. The remaining **228 warnings**, all `effecttsgo/unstable-api-usage`,
+functions. The remaining **247 warnings**, all `effecttsgo/unstable-api-usage`,
 are intentionally visible: the required exact-pinned Effect process, filesystem,
 path, digest and Node services, and @effect/vitest APIs carry upstream unstable
 annotations. These warnings are not zero diagnostics and do not certify API
@@ -219,9 +219,28 @@ regular lifecycle-test gate. Performance tests assert correctness,
 not wall-clock thresholds. The separately run 1,000/4,000-item and 10,000-small-item
 measurements, exact environment, timings and reproduction command are recorded in
 [core performance evidence](core.md#projection-review-performance-evidence).
-Full checks retain all 228 visible unstable API warnings; there is no zero-warning
+The projection checkpoint reported 228 visible unstable API warnings; there is no zero-warning
 claim. See [projection boundary](core.md#stateful-watch-projection) for partial/
 stale state and remaining reconciliation/host-policy work.
 Wire W1–W5 and append N1/N2 compatibility limits are unchanged. The parent reran
 the frozen install and full checks; independent re-review found no blockers.
 Remote CI is reported separately. No live Delta/host verification is claimed.
+
+## Producer/frontier check leaf
+
+`checkProducerFrontier` uses Effect Schema validation and small typed failures.
+The outbox's `checkFrontier` derives current bounds under its existing semaphore
+and guard. Remote incompatibility/malformed observations do not enter the guard's
+storage-corruption poisoning path. Inputs are detached; output facts are frozen.
+No new services, runtime, scopes, processes, retries or journal event types are
+introduced. There is no append/watch integration or write authorization.
+
+The 21 new tests bring regular coverage to **266 tests across twenty-three
+suites**; the five projection benchmark cases remain separate. Tests use real
+temporary files, reopen and an injected guard barrier. Full checks report **247
+visible unstable-API warnings**, not zero warnings; informational Vitest worker
+suggestions are separate. Exact dependencies and tooling are unchanged. See
+[compatibility boundaries](core.md#producerfrontier-compatibility-check) for
+staleness, ACK scope, retained history and reload/fence limits. Parent full checks
+and independent review passed. Remote CI is reported separately; no live
+Delta/host verification is claimed for this leaf.

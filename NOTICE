@@ -55,3 +55,8 @@ modifications. No rendering, ledger/model delivery or ownership inference includ
 Projection review modifications: private indexed inventories, frozen per-event
 updates and on-demand snapshots, decoded-representation validation, structural
 work-count/ownership regressions and original bounded benchmark CLI fixture.
+
+Producer-frontier check: range and identity validation adapted from pinned
+hooks/cli/thread-commands.ts:564–579 and its tests at :65–80. New typed Effect
+check and guarded read-only outbox operation preserve the journal, receipts,
+fences and reload pause; no replay, authority, repair or ACK promotion added.

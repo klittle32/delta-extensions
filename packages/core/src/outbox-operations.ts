@@ -11,6 +11,7 @@ import {
 } from "./outbox-model.js";
 import { ErrorDetail, Receipt } from "./protocol.js";
 import { DeltaRecord } from "./records.js";
+import { checkProducerFrontier } from "./producer-frontier.js";
 
 /** JSON object order is irrelevant; array order and scalar values are not. */
 const sameJson = (left: unknown, right: unknown): boolean => {
@@ -200,5 +201,27 @@ export const makeOperations = (
         yield* commit({ type: "pause", error });
       }),
     );
-  return { stage, replay, snapshot, applyReceipts, pauseForReload };
+  // Derive local bounds only after guard and while holding the existing permit.
+  // Remote incompatibility is outside guard's corruption/poisoning handler.
+  const checkFrontier = (observation: unknown) =>
+    exclusive(
+      Effect.suspend(() =>
+        checkProducerFrontier(
+          {
+            identity,
+            nextSequence: state.nextSequence,
+            pending: pending(state).map((row) => row.sequence),
+          },
+          observation,
+        ),
+      ),
+    );
+  return {
+    stage,
+    replay,
+    snapshot,
+    applyReceipts,
+    pauseForReload,
+    checkFrontier,
+  };
 };
