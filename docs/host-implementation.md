@@ -7,7 +7,7 @@ The generic Letta changes are being developed against Letta Code `0.34.36`,
 upstream commit `8b713fe8f339a2f998b9d3ee339e185d5d409146`, on branch
 `delta/mod-host-apis` for the [personal fork](https://github.com/klittle32/letta-code).
 The source checkpoint is committed and pushed through
-[`08fa6e2e6`](https://github.com/klittle32/letta-code/commit/08fa6e2e6273bfe320b53f24d4bb2e86cc1d2e4c):
+[`697c9c541`](https://github.com/klittle32/letta-code/commit/697c9c5414f84518e3a44294f784b36cf756dfde):
 
 - `3eacb8139`: native questions and initial turn/context primitives.
 - [`5b0cc744c`](https://github.com/klittle32/letta-code/commit/5b0cc744c63e0b21b3e4eb731bde6546a754ce7c): inactive scoped conversation creation.
@@ -16,6 +16,8 @@ The source checkpoint is committed and pushed through
   passive-context transport/acceptance helpers.
 - `08fa6e2e6`: scoped TUI model-only context records, frozen human-input delivery,
   original-scope reconciliation and human transcript/title projection.
+- `697c9c541`: durable human/both context rows, whole-message placement,
+  scope-fenced restoration and bounded rendering/identity-change handling.
 
 This is a development branch, not an upstream submission, release, or deployment.
 Those actions require separate authorization.
@@ -99,10 +101,18 @@ Those actions require separate authorization.
   not text, from resume/backfill and human-authored title/description seeds. Raw
   history remains canonical and assistant responses remain verbatim. Local
   classification does not need live metadata; pending delivery still verifies its
-  principal. Human/both recording visibility remains explicitly unsupported.
+  principal. Human/both records now render as distinct labelled host-local rows,
+  not fabricated user messages. Human-only text stays outside inference,
+  reflection and title seeds; both keeps the existing next-explicit-human delivery.
+  Atomic immutable placement and stable message/tool aliases survive restart.
+  Same-owner invalidation retains the validated view, unchanged records do not
+  repaint, and unrelated renders do no asynchronous identity I/O. New text still
+  passes full captured authorization; a cheap owner change clears stale display.
+  There is no cross-process live sync or background credential/store watcher.
+  Missing/clipped anchors remain visibly unavailable rather than guessed.
   Corrupt snapshots fail closed; an unrelated corrupt inbox can also cause
   default-title fallback when classification lacks an agent ID. See the
-  [host contract and limitations](https://github.com/klittle32/letta-code/blob/08fa6e2e6273bfe320b53f24d4bb2e86cc1d2e4c/docs/host-local-context.md).
+  [host contract and limitations](https://github.com/klittle32/letta-code/blob/697c9c5414f84518e3a44294f784b36cf756dfde/docs/host-local-context.md).
 
 Independent read-only review found no blocking safety defect in the three
 primitives. Its callback-parity finding was reproduced and fixed with a
@@ -121,11 +131,14 @@ Passive-context review then exposed capture poisoning, stale credentials,
 pagination, unsafe retry, abort classification and metadata-dependent projection.
 Regression tests and independent rechecks closed those findings. Conservative
 replay fencing, exact-run-only cancellation and corrupt-file limitations remain
-explicit; the final recheck found no blocking issue in this model-only slice.
+explicit; the recheck found no blocking issue in the model-only slice. Human/both
+review then caught render-time I/O, redundant repaints, rotation restoration and
+fallback-anchor issues. Those were corrected and independently rechecked without
+weakening captured authorization; no blocking issue remained.
 
 ## Checkpoint verification
 
-- **580 focused tests passed across 74 suites**, run in separate processes to
+- **606 focused tests passed across 79 suites**, run in separate processes to
   respect the repository's TUI/global-state isolation requirements.
 - **All 13 `bun run check` gates passed**, including TypeScript and file-size
   ratchets; no size limit was relaxed.
@@ -153,6 +166,14 @@ explicit; the final recheck found no blocking issue in this model-only slice.
   47-second desktop recording and dark/light views were inspected. This used the
   deterministic local executor and a literal fake model-catalog key, not a live
   provider, Cloud or Delta service.
+- Human/both followed in a continuous 59-second rebuilt-Node desktop walkthrough.
+  Three visibility records initially left server history empty; automated activity
+  did not bind them. Real human input delivered only model/both notes, with the
+  human-only marker absent from the canonical context row. A later display-only
+  note followed the completed response. Retry and restart preserved four records,
+  five server rows and one accepted binding. Dark live and light resumed views,
+  the decoded recording and checkpoint assertions passed. Native mid-tool timing
+  and live credential rotation are not claimed from this idle/settled walkthrough.
 
 The final tests ran with telemetry disabled. In this root Linux sandbox, the
 unchanged installer permission-failure tests required normal DAC enforcement:
@@ -169,8 +190,10 @@ checkpoint; the reported gates were run locally.
 
 ## In progress and remaining
 
-1. Complete durable human-visible context projection and scope restoration.
-2. Establish sufficient main/child observation and recording coverage. Do not
+1. Complete and prove noncreating full local-history reads, including resident
+   compacted history, cursor errors and two-process child freshness. This is in
+   progress; raw history still is not an export-safe transcript view.
+2. Establish provenance-aware main/child recording coverage. Do not
    infer lossless coverage from parent tool receipts alone. The source-only
    [recording boundary findings](recording-boundaries.md) identify the safe-view
    and noncreating history-read prerequisites; they are not implemented yet.
