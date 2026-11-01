@@ -83,6 +83,9 @@ child recording is impossible. See the [host findings](host-capabilities.md).
 1. **Active execution cancellation:** stop and settle the actual current run,
    including in-flight tools and relevant children, when Delta fences it. A mod's
    abort signal is a host-to-mod teardown signal, not a mod-to-host stop control.
+   Stock 0.34.36 exposes pre-turn cancellation, not active-run cancellation.
+   This is an acknowledged parity gap; continue unrelated mod development without
+   a host fork or claiming that prompt/tool admission guards stop running work.
 2. **Fresh session and workspace handoff:** create/activate a fresh conversation,
    apply the mounted directory to the host and its tools, preserve trust/approval,
    and resume safely. Forking a handle or changing a child process cwd is not this.
@@ -101,10 +104,10 @@ host API, not just prose documentation. The inspected mod UI has no native
 ask/select input contract; the exported question helper provides receipt parsers
 and notification serialization, not an interactive mod API.
 
-**Owner decision, October 31, 2026:** approved **Host APIs first**. Preserve full
-parity and develop the minimal generic Letta APIs before completing the adapter.
-Upstream submission requires separate approval. No reduced milestone is
-authorized, and no complete host API implementation is claimed yet.
+**Current constraint:** full parity through the API surface stock Letta Code
+exposes to mods. No Letta Code fork, fork-dependent APIs, private-runtime
+workarounds, or host changes. This supersedes the earlier host-API development
+route. Missing APIs are blockers to disclose, not permission to reduce parity.
 
 ## Acceptance gates
 

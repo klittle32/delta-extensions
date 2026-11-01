@@ -22,6 +22,14 @@
         "effect": "4.1.1",
       },
     },
+    "packages/letta": {
+      "name": "@delta-extensions/letta",
+      "version": "0.0.0",
+      "dependencies": {
+        "@effect/platform-node": "4.1.1",
+        "effect": "4.1.1",
+      },
+    },
   },
   "packages": {
     "@biomejs/biome": ["@biomejs/biome@2.6.4", "", { "optionalDependencies": { "@biomejs/cli-android-arm64": "2.6.4", "@biomejs/cli-android-x64": "2.6.4", "@biomejs/cli-darwin-arm64": "2.6.4", "@biomejs/cli-darwin-x64": "2.6.4", "@biomejs/cli-linux-arm64": "2.6.4", "@biomejs/cli-linux-arm64-musl": "2.6.4", "@biomejs/cli-linux-x64": "2.6.4", "@biomejs/cli-linux-x64-musl": "2.6.4", "@biomejs/cli-win32-arm64": "2.6.4", "@biomejs/cli-win32-x64": "2.6.4" }, "bin": { "biome": "bin/biome" } }, "sha512-8sKKwaNW4ot22awZ3lBjwWLHnUFXgXnrBPYS2gNlBAXRbDC++7kqjK2H7dR/FgCDtPvO1xfKpgEhJkGxAKYkxA=="],
@@ -47,6 +55,8 @@
     "@biomejs/cli-win32-x64": ["@biomejs/cli-win32-x64@2.6.4", "", { "os": "win32", "cpu": "x64" }, "sha512-pYsMy5AThiHFOZAsngg8qN4PurM6nInKBhVX7sbj3eNpRQqo1Hb0MgCwPL7VqVMrmcEEMj9Ks3qbkallR65e8g=="],
 
     "@delta-extensions/core": ["@delta-extensions/core@workspace:packages/core"],
+
+    "@delta-extensions/letta": ["@delta-extensions/letta@workspace:packages/letta"],
 
     "@effect/platform-node": ["@effect/platform-node@4.1.1", "", { "dependencies": { "@effect/platform-node-shared": "^4.1.1", "undici": "^8.12.2" }, "peerDependencies": { "effect": "^4.1.1", "redis": ">=5.1.0 <7.0.0" } }, "sha512-Oy3eP27XeipUgejftptHy0zf2W75HU8/yPKwBqdz8uYxAvWdf4c48OFYs6KJX/+uIEKdMjnF6mXYgbauWgIcVA=="],
 

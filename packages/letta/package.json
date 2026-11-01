@@ -1,0 +1,26 @@
+{
+  "name": "@delta-extensions/letta",
+  "version": "0.0.0",
+  "type": "module",
+  "license": "AGPL-3.0-only",
+  "exports": "./dist/index.mjs",
+  "files": [
+    "dist"
+  ],
+  "dependencies": {
+    "effect": "4.1.1",
+    "@effect/platform-node": "4.1.1"
+  },
+  "letta": {
+    "manifestVersion": 1,
+    "mods": [
+      "dist/index.mjs"
+    ],
+    "engines": {
+      "lettaCodeCli": "0.34.36"
+    },
+    "capabilities": [
+      "commands"
+    ]
+  }
+}

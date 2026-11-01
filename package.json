@@ -10,7 +10,7 @@
     "test": "vitest run",
     "typecheck": "effect-tsgo tsc --noEmit",
     "effect-check": "bun run lint",
-    "build": "effect-tsgo tsc -p tsconfig.build.json",
+    "build": "effect-tsgo tsc -p tsconfig.build.json && bun packages/letta/build.mjs",
     "lint": "effect-tsgo oxlint --type-aware .",
     "format": "biome format --write .",
     "check": "bun run typecheck && bun run lint && bun run format:check && bun run test && bun run build",

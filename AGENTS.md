@@ -8,9 +8,12 @@
 - The first adapter must be a Letta Code mod using documented public mod APIs.
   Do not import private host modules, access private symbols, or monkey-patch the
   harness to hide a missing capability.
-- Ask the owner before expanding scope into changes to Letta Code itself or
-  reducing feature parity. An external issue, release, deployment, or registry
-  publication needs separate authorization.
+- Do not fork Letta Code or use a fork. Required behavior must use the API surface
+  stock Letta Code exposes to mods. Surface concrete blockers; do not silently
+  reduce parity. External issues, releases, deployments, and registry publication
+  need separate authorization.
+- Code, tests, and requirements are the source of truth. Keep documentation only
+  when it helps development; do not write delivery journals or redundant commentary.
 - Future harness support belongs in separate adapters. Keep Delta protocol and
   persistence logic host-independent. Do not create placeholder implementations.
 
@@ -49,6 +52,8 @@ acceptance from these deterministic tests. Add no placeholder adapter.
   an unavailable transcript interface.
 - Preserve producer identities, immutable outbox records, per-record receipts,
   turn fencing, and original turn sequences for late output.
-- Do not enable shared writes without a proven host turn/tool cancellation path.
+- Respect Delta turn fences using the exposed controls. Active-run cancellation
+  is a documented stock-API parity gap, not a reason to resume host development;
+  never claim that admission guards stop already-running tools or child work.
 - Keep a tested/untested distinction for platforms, hosts, and runtime surfaces.
 - Preserve upstream AGPL-3.0-only licensing when adapting its code or fixtures.
