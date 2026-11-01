@@ -37,3 +37,11 @@ or live Delta calls are included.
 Append review regressions: inner-process-scope decoded-error observation and
 uninterruptible reload persistence, public Scope-state admission, original
 SIGTERM-grace fixtures/tests, and explicit appendFailure parity-gap tests.
+
+Watch wire leaf: event/user/item/producer/child/comment/worktree validation and
+readonly invocation adapted from pinned hooks/cli/thread-commands.ts:43–118,235–343,
+hooks/cli/delta-cli.ts:407–445 and consumers in hooks/watch/watch.ts:417–552.
+packages/core/test/fixtures/watch-events.json contains the unchanged objects from
+hooks/testing/fixtures/cli/thread-watch.frames.jsonl, converted to a JSON array.
+New tagged unknown-event/target representations, Effect schemas, owned readonly
+invocation and deterministic Node fixture/tests are local modifications.

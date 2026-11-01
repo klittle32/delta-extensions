@@ -7,13 +7,15 @@ The generic Letta changes are being developed against Letta Code `0.34.36`,
 upstream commit `8b713fe8f339a2f998b9d3ee339e185d5d409146`, on branch
 `delta/mod-host-apis` for the [personal fork](https://github.com/klittle32/letta-code).
 The source checkpoint is committed and pushed through
-[`870ee9951`](https://github.com/klittle32/letta-code/commit/870ee99514387e6d3226871e921a8d7b1d200cae):
+[`08fa6e2e6`](https://github.com/klittle32/letta-code/commit/08fa6e2e6273bfe320b53f24d4bb2e86cc1d2e4c):
 
 - `3eacb8139`: native questions and initial turn/context primitives.
 - [`5b0cc744c`](https://github.com/klittle32/letta-code/commit/5b0cc744c63e0b21b3e4eb731bde6546a754ce7c): inactive scoped conversation creation.
 - `5b5350f1a`: interruption retirement, terminal events, and precise child ownership.
 - `870ee9951`: trusted fresh-session activation, history cursors, and captured
-  passive-context transport/acceptance helpers (delivery remains unwired).
+  passive-context transport/acceptance helpers.
+- `08fa6e2e6`: scoped TUI model-only context records, frozen human-input delivery,
+  original-scope reconciliation and human transcript/title projection.
 
 This is a development branch, not an upstream submission, release, or deployment.
 Those actions require separate authorization.
@@ -84,8 +86,23 @@ Those actions require separate authorization.
   replacement and credential changes fence new work. Reconciliation retains the
   original binding; a failed fence never releases uncertain records. Positive
   acceptance evidence requires canonical context/human message identities in
-  order. These tested helpers are not yet wired into human submissions or a
-  public passive-context API.
+  order.
+- **Scoped passive-model delivery:** capability-guarded
+  `ctx.conversation.context.record/list/submissions/reconcile` persists immutable
+  records without inference. Only explicit human TUI input selects them. Normal
+  automated/mod sends, approvals and continuations do not. The normalized request
+  and message identities are frozen; uncertain dispatch is never blindly replayed.
+  Only the positive typed Cloud-shutdown admission-rejection contract permits an
+  exact retry. Original-scope chronological reconciliation can confirm acceptance
+  without resending. Esc retains abort classification and queued human input.
+- **Human projection:** model-only rows are excluded by persisted source OTIDs,
+  not text, from resume/backfill and human-authored title/description seeds. Raw
+  history remains canonical and assistant responses remain verbatim. Local
+  classification does not need live metadata; pending delivery still verifies its
+  principal. Human/both recording visibility remains explicitly unsupported.
+  Corrupt snapshots fail closed; an unrelated corrupt inbox can also cause
+  default-title fallback when classification lacks an agent ID. See the
+  [host contract and limitations](https://github.com/klittle32/letta-code/blob/08fa6e2e6273bfe320b53f24d4bb2e86cc1d2e4c/docs/host-local-context.md).
 
 Independent read-only review found no blocking safety defect in the three
 primitives. Its callback-parity finding was reproduced and fixed with a
@@ -100,10 +117,15 @@ preparation after source close, unbounded initialization and notification-scope
 risks. Those were fixed and independently rechecked with no remaining blocker.
 Actual source-TUI testing also found an empty-transcript timestamp repair marking
 a fresh local conversation as used; a regression test pins the corrected behavior.
+Passive-context review then exposed capture poisoning, stale credentials,
+pagination, unsafe retry, abort classification and metadata-dependent projection.
+Regression tests and independent rechecks closed those findings. Conservative
+replay fencing, exact-run-only cancellation and corrupt-file limitations remain
+explicit; the final recheck found no blocking issue in this model-only slice.
 
 ## Checkpoint verification
 
-- **533 focused tests passed across 67 suites**, run in separate processes to
+- **580 focused tests passed across 74 suites**, run in separate processes to
   respect the repository's TUI/global-state isolation requirements.
 - **All 13 `bun run check` gates passed**, including TypeScript and file-size
   ratchets; no size limit was relaxed.
@@ -123,6 +145,14 @@ a fresh local conversation as used; a regression test pins the corrected behavio
   desktop recording was fully decoded and visually inspected; dark and light
   terminal screenshots were checked. No model inference or live Delta operation
   was involved. This does not establish Cloud activation or Desktop parity.
+- Passive context was exercised through the rebuilt Node TUI: recording alone
+  created no server rows; an automated send created two rows without consuming
+  context; the human turn added one context, human and assistant row. Canonical
+  reconciliation confirmed acceptance without increasing the five-row history.
+  Restart retained those rows while hiding the model-only bubble. The continuous
+  47-second desktop recording and dark/light views were inspected. This used the
+  deterministic local executor and a literal fake model-catalog key, not a live
+  provider, Cloud or Delta service.
 
 The final tests ran with telemetry disabled. In this root Linux sandbox, the
 unchanged installer permission-failure tests required normal DAC enforcement:
@@ -139,16 +169,12 @@ checkpoint; the reported gates were run locally.
 
 ## In progress and remaining
 
-1. Wire passive context only to explicitly identified human submissions, with
-   frozen request identity, acceptance/recovery, and separate human history.
-   Use the captured session/transport and acceptance helpers; a process-global
-   organization cache alone is not a safe account namespace.
-2. Complete durable human-visible context projection and scope restoration.
-3. Establish sufficient main/child observation and recording coverage. Do not
+1. Complete durable human-visible context projection and scope restoration.
+2. Establish sufficient main/child observation and recording coverage. Do not
    infer lossless coverage from parent tool receipts alone.
-4. Repeat focused tests, full static gates, built-Node validation, independent
+3. Repeat focused tests, full static gates, built-Node validation, independent
    integration review, and relevant native acceptance for subsequent slices.
-5. Complete the Effect 4.1 engine and build the Letta adapter against the resulting public APIs,
+4. Complete the Effect 4.1 engine and build the Letta adapter against the resulting public APIs,
    then run the parity gates in [requirements.md](requirements.md).
 
 Cloud freshness checks currently require explicit server evidence of an unused

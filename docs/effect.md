@@ -46,7 +46,7 @@ and the installed 0.63.0 README/matrix. The resulting configuration uses:
 No Oxlint rule is suppressed. Real findings were corrected: typed decoders for
 known encoded values, selective `catchIf`, concrete test error channels, and
 Effect-valued `replay`/`snapshot` service members instead of lazy zero-argument
-functions. The remaining **164 warnings**, all `effecttsgo/unstable-api-usage`,
+functions. The remaining **190 warnings**, all `effecttsgo/unstable-api-usage`,
 are intentionally visible: the required exact-pinned Effect process, filesystem,
 path, digest and Node services, and @effect/vitest APIs carry upstream unstable
 annotations. These warnings are not zero diagnostics and do not certify API
@@ -182,3 +182,15 @@ been performed. Full parity remains the product target. See [core boundaries](co
 - [Schema](https://effect.website/docs/v4/api/effect/Schema)
 - [Native tsgo tooling](https://www.npmjs.com/package/@effect/tsgo)
 - [Effect Oxlint setup](https://github.com/Effect-TS/tsgo/blob/main/docs/README.md)
+
+## Readonly watch leaf
+
+`watchThread` uses `Stream.unwrap`, schema decoding and the existing scoped
+transport; each materialization performs contract negotiation and one readonly
+watch. No runtime/service singleton or reconnect fiber is introduced. Explicit
+known/future-event and comment-target wrappers use Effect Schema transformations
+with reversible wire encoding. All pinned event variants are covered; no stateful
+snapshot reducer or host workflow is built. See [wire boundaries](core.md#readonly-watch-wire-boundary)
+for transport differences and caller binding requirements. The 17 watch tests
+bring local coverage to 199 tests across seventeen suites; fixture processes are
+not live Delta acceptance. No remote CI for this leaf is claimed.

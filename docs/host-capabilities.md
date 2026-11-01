@@ -2,6 +2,8 @@
 
 Reviewed October 31, 2026, independently of the Delta requirements research.
 This is source evidence, not a live-host compatibility certification.
+This describes the pinned upstream baseline. See [the implementation checkpoint](host-implementation.md)
+for the subsequent personal-fork APIs and their remaining limits.
 
 ## Sources
 

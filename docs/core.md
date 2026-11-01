@@ -34,8 +34,9 @@ noninteractive fallback still belong to the future adapter.
   durable receipt handling succeeds. The transport below supplies JSONL framing,
   but does not persist or correlate receipts automatically. The append delivery
   owner below explicitly validates and persists receipts for its selected batch.
-- `ProducerTurnEvent` covers only `producer.turn`, including supersession.
-  Other watch events and full snapshot reconstruction are not supported yet.
+- `WatchEvent` covers all pinned contract-8 watch data variants (including
+  `ProducerTurnEvent`), with explicit known/future-event wrappers. See the
+  readonly watch boundary below; snapshot reconstruction is not implemented.
 - `decodeResponse(schema)` checks a structured `error` before success decoding.
   Invalid envelopes remain `SchemaError`; valid failures are `DeltaFailure` and
   retain code, diagnostic reason, retryability, delay and extension fields.
@@ -355,7 +356,7 @@ The new implementation persists each validated receipt incrementally rather than
 waiting to save a captured stdout prefix. Fixtures are original actual Node child
 programs; test-only file gates make post-receipt failure/crash ordering deterministic.
 No real Delta executable/service/account, installation, authentication, watch,
-retry loop, snapshot or adapter workflow was exercised or implemented here.
+retry loop, snapshot or adapter workflow was exercised or implemented in the append leaf.
 
 ## Verification record
 
@@ -413,8 +414,61 @@ Scope state. Six review tests cover these cases and the two disclosed parity
 differences: **181 tests across fifteen suites**. Real-child tests use a SIGTERM
 marker, a 1,500 ms forced-kill grace and interruption 200 ms into teardown, and
 check actual handle exit plus OS PID absence. Full checks and frozen installation
-run with build output present. No remote CI
-for this uncommitted delivery leaf is claimed.
+run with build output present. The append checkpoint
+[`2d03ad9`](https://github.com/klittle32/delta-extensions/commit/2d03ad97fd7e8bd3b50e056348f1ac626493262f)
+passed [CI 41254238387](https://github.com/klittle32/delta-extensions/actions/runs/41254238387).
+
+## Readonly watch wire boundary
+
+`watchThread({ executable, cwd, binding, transport? })` is a cold Effect Stream.
+Each materialization negotiates contract 8, then runs exactly
+`--json thread watch REFERENCE --source SOURCE --external-id EXTERNAL_ID`.
+The explicit caller binding supplies all identity; there is no Claude identity,
+`--participate`, stdin, runtime, retry, reconnect or background daemon. The
+reference must already be a verified binding for the intended thread; neither
+URL shape nor subsequent event decoding proves correct routing. Transport
+limits/deadlines apply to each child operation, not a combined two-command budget.
+
+`decodeWatchEvent` validates ready/item/item.append/remove/live/turn/producer.turn/
+presence/children/child/child.remove/worktrees/comment/comment.remove and terminal
+structured errors. Ready requires a nullable producer; live remains a literal wire
+boundary. Item content is an opaque object; item/child kinds and child statuses
+remain open. Users, producer frontiers, turns, nullable fields, comments, worktrees
+and file/transcript target structures are checked against the pinned validators.
+Unknown future events become `UnknownWatchEvent` values (upstream skips them),
+and unknown comment targets become `UnknownCommentTarget`. Consumers must ignore
+unknown event wrappers explicitly. Malformed known types cannot enter these future
+branches. Encoders restore the raw wire shape. Extension fields are preserved,
+including event/child/worktree extras which the pinned parser sometimes projects
+away; no opaque content is converted to text or local files opened.
+
+The existing generic transport remains fail-fast: malformed JSON/schema errors,
+nonzero exits, structured failures, limits, timeout and cancellation remain visible.
+Already emitted frames do not imply successful completion. Structured failures retain
+retry hints without retrying. Unlike the upstream line reader, blank lines are
+rejected; the core accepts a final unterminated JSON line and rejects malformed
+UTF-8. Malformed error envelopes remain visible schema failures. No ready ordering,
+duplicate-ready detection, producer binding/frontier reconciliation, snapshot
+reducer, live-state transition, host watch workflow or full parity is claimed.
+
+Additional compatibility limits are explicit: any top-level `error` key is
+treated as an envelope, so even `error: null` rejects an otherwise valid frame.
+Invalid optional error fields reject the envelope rather than preserving its
+code and dropping the bad hint as upstream does. A bare `{type: "error"}` also
+fails instead of being ignored. The exported wire codecs include the error
+variant, but `decodeWatchEvent` and `watchThread` surface valid envelopes as
+`DeltaFailure`, not event values. Default transport budgets terminate the child
+at 120 seconds or 16 MiB cumulative output; a future long-lived owner must choose
+appropriate finite budgets explicitly. Configuration is read on each cold-stream
+materialization; callers must not mutate it during use.
+
+Watch TDD first failed on missing decoder/invocation modules; the completed leaf
+adds 17 tests (199 total across seventeen suites). Tests adapt all 18 pinned frames,
+roundtrip retained fields/targets, reject malformed known variants, and use bounded
+real Node fixtures for exact argv/cwd/identity, contract refusal, errors, limits,
+timeout, consumer stop and interruption. Cleanup checks child exit and PID absence;
+this proves direct-child ownership on Linux, not descendant-tree termination.
+No live Delta or host call is made. No remote CI for this watch leaf is claimed.
 
 ## Provenance and licensing
 
@@ -432,6 +486,7 @@ Pinned reference: [delta-claude ac769c6](https://github.com/zed-industries/delta
 | Transport invariants | `hooks/cli/command-reader.ts`, `hooks/cli/delta-cli.ts:384` (exact append stdin); new Effect implementation and original Node fixtures |
 | Record envelope, turn constraints, batching and append-delivery semantics | `hooks/recording/outbox.ts`, `hooks/recording/delivery.ts` |
 | Emitted content blocks, tool/title updates and adapted record-content fixture | `hooks/recording/content.ts`, `hooks/recording/title.ts` |
+| Watch schemas and adapted 18-frame fixture | `hooks/cli/thread-commands.ts`, `hooks/cli/delta-cli.ts:407–440`, `hooks/testing/fixtures/cli/thread-watch.frames.jsonl`; consumers `hooks/watch/watch.ts` |
 | Six unchanged JSON test fixtures | `hooks/testing/fixtures/cli/thread-status.*.json`, `thread-append.*.json` |
 
 Fixtures are deterministic upstream contract examples, not evidence of installed
