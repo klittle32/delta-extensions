@@ -46,7 +46,7 @@ and the installed 0.63.0 README/matrix. The resulting configuration uses:
 No Oxlint rule is suppressed. Real findings were corrected: typed decoders for
 known encoded values, selective `catchIf`, concrete test error channels, and
 Effect-valued `replay`/`snapshot` service members instead of lazy zero-argument
-functions. The remaining **190 warnings**, all `effecttsgo/unstable-api-usage`,
+functions. The remaining **228 warnings**, all `effecttsgo/unstable-api-usage`,
 are intentionally visible: the required exact-pinned Effect process, filesystem,
 path, digest and Node services, and @effect/vitest APIs carry upstream unstable
 annotations. These warnings are not zero diagnostics and do not certify API
@@ -189,8 +189,39 @@ been performed. Full parity remains the product target. See [core boundaries](co
 transport; each materialization performs contract negotiation and one readonly
 watch. No runtime/service singleton or reconnect fiber is introduced. Explicit
 known/future-event and comment-target wrappers use Effect Schema transformations
-with reversible wire encoding. All pinned event variants are covered; no stateful
-snapshot reducer or host workflow is built. See [wire boundaries](core.md#readonly-watch-wire-boundary)
+with reversible wire encoding. All pinned event variants are covered; the separate
+projection below now handles snapshot inventories. No host workflow is built. See [wire boundaries](core.md#readonly-watch-wire-boundary)
 for transport differences and caller binding requirements. The 17 watch tests
 bring local coverage to 199 tests across seventeen suites; fixture processes are
 not live Delta acceptance. No remote CI for this leaf is claimed.
+
+## Watch projection leaf
+
+`makeWatchProjection` uses an Effect Ref for admission and stream-scoped
+acquire/release for exit-state finalization. Private mutable Maps hold ordered
+inventories; only explicit `snapshot` reads build frozen ordered arrays. The
+stream emits small `WatchProjectionUpdate` observations (`event`, `phase`,
+`snapshotComplete`), never a full inventory per frame. Frozen ingress payloads
+are shared safely across updates/snapshots; append creates only changed containers.
+No runtime, timers, unowned fibers or process implementation is added.
+
+Ingress cloning owns getter failures, Schema.Json rejects non-wire/shared-memory
+values, and `Schema.toType(WatchEvent)` validates decoded tags and target wrappers
+before the exhaustive typed reducer. Bad hand-built input cannot poison subsequent
+attempts. Original source error channels and cancellation propagate; `snapshot`
+remains queryable after termination.
+
+The projection has **46 regular tests**, including four real Node lifecycle
+compositions and deterministic work-count/ownership regressions: **245 tests
+across twenty-one suites** total. Five bounded benchmark cases run separately
+with their dedicated single-worker config, keeping measurement load out of the
+regular lifecycle-test gate. Performance tests assert correctness,
+not wall-clock thresholds. The separately run 1,000/4,000-item and 10,000-small-item
+measurements, exact environment, timings and reproduction command are recorded in
+[core performance evidence](core.md#projection-review-performance-evidence).
+Full checks retain all 228 visible unstable API warnings; there is no zero-warning
+claim. See [projection boundary](core.md#stateful-watch-projection) for partial/
+stale state and remaining reconciliation/host-policy work.
+Wire W1–W5 and append N1/N2 compatibility limits are unchanged. The parent reran
+the frozen install and full checks; independent re-review found no blockers.
+Remote CI is reported separately. No live Delta/host verification is claimed.

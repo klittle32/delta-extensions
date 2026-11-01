@@ -45,3 +45,13 @@ packages/core/test/fixtures/watch-events.json contains the unchanged objects fro
 hooks/testing/fixtures/cli/thread-watch.frames.jsonl, converted to a JSON array.
 New tagged unknown-event/target representations, Effect schemas, owned readonly
 invocation and deterministic Node fixture/tests are local modifications.
+
+Watch projection leaf: inventory/snapshot boundaries and update semantics adapted
+from pinned hooks/watch/watch.ts:417–560 and RemoteView in
+hooks/watch/conversation.ts (reset/upsert/append/remove/comment parent/target),
+with adapted cases from hooks/watch/conversation.test.ts. New Effect-owned
+projection state, lifecycle failures and deterministic fixtures/tests are local
+modifications. No rendering, ledger/model delivery or ownership inference included.
+Projection review modifications: private indexed inventories, frozen per-event
+updates and on-demand snapshots, decoded-representation validation, structural
+work-count/ownership regressions and original bounded benchmark CLI fixture.

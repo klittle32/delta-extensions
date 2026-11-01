@@ -2,7 +2,8 @@
 
 This is a deterministic foundation, not an installable mod or parity certification.
 The core now includes scoped subprocess JSON/JSONL transport, alongside pure command
-parsing, Effect Schema validation, durable producer storage and one-attempt append delivery. Transport requires the injected Effect
+parsing, Effect Schema validation, durable producer storage, one-attempt append delivery
+and readonly watch decoding/projection. Transport requires the injected Effect
 `ChildProcessSpawner` service; the separate `@delta-extensions/core/node` entry
 exports `nodeProcessLayer` backed by exact-pinned `@effect/platform-node` 4.1.1.
 Core creates no runtime. Tests run real Node fixture processes and inject spawner
@@ -36,7 +37,7 @@ noninteractive fallback still belong to the future adapter.
   owner below explicitly validates and persists receipts for its selected batch.
 - `WatchEvent` covers all pinned contract-8 watch data variants (including
   `ProducerTurnEvent`), with explicit known/future-event wrappers. See the
-  readonly watch boundary below; snapshot reconstruction is not implemented.
+  readonly watch and stateful projection boundaries below; no host watch workflow is built.
 - `decodeResponse(schema)` checks a structured `error` before success decoding.
   Invalid envelopes remain `SchemaError`; valid failures are `DeltaFailure` and
   retain code, diagnostic reason, retryability, delay and extension fields.
@@ -447,19 +448,20 @@ nonzero exits, structured failures, limits, timeout and cancellation remain visi
 Already emitted frames do not imply successful completion. Structured failures retain
 retry hints without retrying. Unlike the upstream line reader, blank lines are
 rejected; the core accepts a final unterminated JSON line and rejects malformed
-UTF-8. Malformed error envelopes remain visible schema failures. No ready ordering,
-duplicate-ready detection, producer binding/frontier reconciliation, snapshot
-reducer, live-state transition, host watch workflow or full parity is claimed.
+UTF-8. Malformed error envelopes remain visible schema failures. This wire operation
+alone does not enforce ready ordering or project a snapshot; the separate owner
+below handles those boundaries. Producer binding/frontier reconciliation, host
+watch workflow and full parity remain unimplemented.
 
 Additional compatibility limits are explicit: any top-level `error` key is
-treated as an envelope, so even `error: null` rejects an otherwise valid frame.
-Invalid optional error fields reject the envelope rather than preserving its
-code and dropping the bad hint as upstream does. A bare `{type: "error"}` also
+treated as an envelope (W1), so even `error: null` rejects an otherwise valid frame.
+Invalid optional error fields (W3) reject the envelope rather than preserving its
+code and dropping the bad hint as upstream does. A bare `{type: "error"}` (W2) also
 fails instead of being ignored. The exported wire codecs include the error
 variant, but `decodeWatchEvent` and `watchThread` surface valid envelopes as
-`DeltaFailure`, not event values. Default transport budgets terminate the child
+`DeltaFailure`, not event values. Default transport budgets (W4) terminate the child
 at 120 seconds or 16 MiB cumulative output; a future long-lived owner must choose
-appropriate finite budgets explicitly. Configuration is read on each cold-stream
+appropriate finite budgets explicitly. Configuration (W5) is read on each cold-stream
 materialization; callers must not mutate it during use.
 
 Watch TDD first failed on missing decoder/invocation modules; the completed leaf
@@ -469,6 +471,162 @@ real Node fixtures for exact argv/cwd/identity, contract refusal, errors, limits
 timeout, consumer stop and interruption. Cleanup checks child exit and PID absence;
 this proves direct-child ownership on Linux, not descendant-tree termination.
 No live Delta or host call is made. No remote CI for this watch leaf is claimed.
+
+## Stateful watch projection
+
+`makeWatchProjection(expectedThread)` creates one private in-memory owner with
+`snapshot: Effect<WatchProjectionState>` and
+`project(decodedEvents): Stream<WatchProjectionUpdate>`. Each update contains
+only `{ event, phase, snapshotComplete }`, not a full inventory.
+For example, `owner.project(watchThread(options))` composes with the existing
+transport; `expectedThread` is the caller's explicit expected thread ID, not a
+locator parsed into an inferred identity. There is no runtime, background worker,
+reconnect loop, timer or outbox mutation. Materialization is cold and sequentially
+reusable; overlapping attempts on one owner fail `WatchProjectionError(busy)`.
+Independent owners are independent; this is not global watch coordination.
+
+The projection follows pinned `watch.ts` and `RemoteView` inventory semantics:
+
+- Known activity requires `ready`; wrong-thread and duplicate readiness fail.
+  As in upstream, `producer.turn` can arrive before readiness. These are raw
+  facts, not permission to own a turn. Unknown wrappers are ignored explicitly,
+  with no state reset or emission. Known malformed wire events still fail decoding.
+- A valid `ready` clears items, comments, presence and children and starts an
+  incomplete snapshot. The ready producer (including null), frontier and turn
+  remain facts; producer-turn updates are separate from thread-turn reports.
+  Last-known thread turn and worktrees survive refresh, as upstream does;
+  `reported.turn/worktrees` distinguish reports in the new attempt from retained
+  facts. Presence is the raw latest report, without upstream UI debounce timers.
+- Each known update emits its owned, validated, deeply frozen event plus small
+  phase/completeness facts. Full ordered inventory is available only through an
+  explicit `snapshot` read. Snapshot items/comments are staged and visible as
+  incomplete in that read; `live` alone marks the
+  snapshot complete. This is the wire snapshot boundary, not upstream access/
+  checkout inspection, participation readiness or sharing consent. Repeated
+  `live` is accepted as upstream does. There is no separate atomic snapshot swap.
+- Items/comments keep first-arrival order. Upserts replace in place; removal and
+  reinsertion move an ID to the end. `after_id` remains data, not a sorting rule.
+  Append requires an existing item and appends to string `content.text` (or empty
+  text if the old field is non-string), preserving other opaque content. Missing
+  removals are no-ops. Child full reports replace the inventory; child upserts
+  replace the first matching entry or append; removal removes matching entries.
+  Worktrees and presence are whole reports. No server facts are rendered or opened.
+- Comment removal does not cascade to replies or linked items. `commentContext`
+  finds the immediate `after_id` parent and inherits a reply's target from its
+  chain root; missing roots/parents remain undefined. No target is guessed.
+
+Natural EOF before `live` fails `incomplete-snapshot`, including an empty stream.
+EOF after `live` succeeds as finite consumption but leaves `phase: ended`, never a
+healthy live watch. Failure/reset, interruption and early consumer stop finalize
+the phase similarly; original typed failures/causes pass through unchanged.
+`snapshotComplete` records whether this attempt actually reached `live`, not
+current connection health. `end` distinguishes EOF, failure, interruption
+(including mixed interrupt causes) and early stop. Terminal state is queried with
+`snapshot`; it is not a final stream emission on error or cancellation. The phase
+changes when stream finalization runs; during underlying transport teardown the
+last observed phase may remain visible. This is not process-health monitoring. Already
+emitted values are immutable historical observations, not a current-status handle.
+
+An explicit subsequent materialization marks the previous inventory stale
+(`awaiting-ready`, incomplete, ready null); inventories clear only on valid ready.
+If spawn/contract/read fails before ready, retained inventory stays stale. A
+partial refresh never becomes complete because an earlier attempt completed.
+There is no eviction/truncation or projection-level byte budget: the owner retains
+current inventory, so callers must keep input/transport budgets bounded. Events
+are cloned and frozen once at ingress. Private Maps index item/comment IDs; child
+slots have both order and ID indexes, preserving duplicates and first-match
+updates without scanning unrelated children. No mutable index escapes. Normal
+insertion/replacement/removal does not visit or copy prior inventory; removing a
+duplicated child ID visits its matching slots. Whole presence/worktree/child
+reports necessarily cost their input size. Append copies only the affected item's
+own fields/content container and concatenates its text, safely sharing frozen
+nested content. It does not walk other items or re-freeze unchanged payloads.
+
+An explicit `snapshot` builds fresh frozen ordered arrays in O(inventory count),
+sharing the immutable payload objects; it does not deep-clone or revisit their
+opaque content. Old snapshots and updates remain immutable after later changes.
+Consumers choosing a full snapshot after every event pay for that repeated work
+explicitly; retaining old snapshots also retains their historical payloads.
+`commentContext` is a pure lookup over an explicit snapshot, not part of the
+per-event path. It scans the comments array; calling it for every comment is
+quadratic. Bulk consumers should build an index once instead of repeating it.
+
+The public input boundary validates the **decoded representation** with
+`Schema.toType(WatchEvent)`, including already-tagged comment targets. Invalid
+known tags/types/fields cannot fall through the reducer or damage the owner;
+`invalid-event` is typed, and a subsequent valid attempt remains usable. The
+reducer also has a compile-time exhaustive, runtime typed-failure default. All
+caller property access occurs inside owned ingress cloning: throwing getters and
+non-cloneable values fail `uncloneable-event`; other non-JSON values (including
+shared memory) fail `invalid-json-value`. No caller-owned mutable value is retained.
+Otherwise valid, very deeply nested JSON can exceed the runtime's
+`structuredClone` limit and receive the same typed `uncloneable-event` error.
+No portable maximum nesting depth is promised.
+Source wire decode failures remain unchanged; this does not alter W1–W3.
+
+TDD began with the missing-module failure; an additional red ownership probe
+exposed shared-memory values bypassing clone-only isolation, now rejected as
+non-JSON before retention. The original 35 projection tests and 16 review/
+benchmark tests now give **46 new regular tests; 245 total across twenty-one
+suites, plus five separate benchmark cases**. They cover staged/complete/incomplete
+refreshes, IDs/order/opaque append,
+comments/chains/removals, all inventory facts, unknowns, wrong thread, admission,
+mutation isolation, typed failures, interruption and early stop. The schema fixture
+is adapted into a coherent attempt by choosing one of its two alternative ready
+frames and placing its error last; the original fixture is a catalog, not one
+continuous stream. Four tests compose the projection with real bounded Node
+fixture children and verify direct-child exit/PID absence on completion, failure,
+interruption and consumer stop. No live Delta or host acceptance is claimed.
+
+### Projection review performance evidence
+
+Review P1 reproduced quadratic item-count cost in the initial full-state-emission
+API, including a default-deadline failure after 8,885 of 10,000 small items. That
+was cumulative work with per-event pauses, not one continuous minute-long freeze.
+The revised API emits deltas and uses indexed private inventories. Deterministic
+regressions at 64/256 items count exactly one freeze of each ingress marker, no
+prior-inventory array scan/copy/iteration work, unchanged object identity across
+explicit snapshots, and frozen mutation-safe sharing. Other regressions cover
+malformed known representations, getter failures and owner reuse (P2).
+
+Reproduce the bounded measurement separately from concurrent full-suite work:
+
+```sh
+bunx vitest run --config packages/core/bench/vitest.config.ts
+```
+
+Three sequential repetitions per case, no discarded warmup or wall-clock pass
+threshold. Measured on Linux x64, AMD EPYC, `availableParallelism() = 1`, Node
+22.23.4 (Vitest executes in Node), Bun launcher 1.4.4, Vitest 5.0.5, Effect 4.1.1.
+Times below are milliseconds, rounded to three decimals; the command prints raw
+JSON timings/environment. Memory cases use prebuilt decoded representations and
+include the new ingress validation; child measurements also include contract
+negotiation, two process starts, wire decoding and finalization. Event gaps include
+startup and scheduling; they are not isolated event-loop latency measurements.
+
+| Source / text bytes per item | Items / wire bytes | Elapsed ms (three runs) | Maximum observed event gap ms (three runs) | Explicit snapshot ms (three runs) |
+| --- | --- | --- | --- | --- |
+| memory / 1024 | 1,000 / 1,175,960 | 56.339, 50.127, 26.092 | 5.192, 5.534, 4.256 | 0.038, 0.007, 0.008 |
+| memory / 1024 | 4,000 / 4,706,960 | 79.548, 60.399, 63.421 | 9.415, 2.888, 3.880 | 0.016, 0.017, 0.015 |
+| memory / 4096 | 1,000 / 4,247,960 | 25.886, 28.607, 46.393 | 5.882, 4.138, 8.633 | 0.032, 0.025, 0.010 |
+| memory / 4096 | 2,000 / 8,496,960 | 34.817, 32.201, 37.962 | 2.060, 2.073, 5.287 | 0.018, 0.009, 0.015 |
+| child / 200 | 10,000 / 3,528,960 | 807.391, 609.482, 610.398 | 91.533, 84.915, 78.189 | 0.025, 0.027, 0.028 |
+
+All repetitions observed exactly items + ready + live and ended with a complete
+snapshot and finite EOF. The 10,000 × 200-byte real-child case used unchanged
+120-second/16-MiB defaults and completed all 10,000 items. These are local sandbox
+measurements, not performance guarantees, live Delta acceptance or a claim of
+uniform per-frame scheduling latency. Benchmarks run separately from `bun run check`:
+a combined run passed 250 tests,
+but a repeat hit the pre-existing maximum-record test's five-second timeout under
+concurrent load. The regular gate retains structural work-count regressions; the
+separate benchmark config avoids adding measurement load to lifecycle tests.
+The table comes from the isolated single-worker run above.
+
+Remaining: producer/frontier reconciliation against durable local state, authority/
+turn ownership, snapshot-to-host ledger/model delivery, inspection, reconnect/reset
+policy, UI presence timing, sharing and adapter workflow. Wire limits W1–W5 above
+remain unchanged; append N1/N2 are untouched. This is not full watch parity.
 
 ## Provenance and licensing
 
@@ -486,6 +644,7 @@ Pinned reference: [delta-claude ac769c6](https://github.com/zed-industries/delta
 | Transport invariants | `hooks/cli/command-reader.ts`, `hooks/cli/delta-cli.ts:384` (exact append stdin); new Effect implementation and original Node fixtures |
 | Record envelope, turn constraints, batching and append-delivery semantics | `hooks/recording/outbox.ts`, `hooks/recording/delivery.ts` |
 | Emitted content blocks, tool/title updates and adapted record-content fixture | `hooks/recording/content.ts`, `hooks/recording/title.ts` |
+| Stateful inventory projection and adapted cases | `hooks/watch/watch.ts:417–560`, `hooks/watch/conversation.ts` (`RemoteView`), `hooks/watch/conversation.test.ts` |
 | Watch schemas and adapted 18-frame fixture | `hooks/cli/thread-commands.ts`, `hooks/cli/delta-cli.ts:407–440`, `hooks/testing/fixtures/cli/thread-watch.frames.jsonl`; consumers `hooks/watch/watch.ts` |
 | Six unchanged JSON test fixtures | `hooks/testing/fixtures/cli/thread-status.*.json`, `thread-append.*.json` |
 
