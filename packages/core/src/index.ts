@@ -7,3 +7,4 @@ export * from "./watch-events.js";
 export * from "./watch.js";
 export * from "./watch-projection.js";
 export * from "./producer-frontier.js";
+export * from "./project-policy.js";
